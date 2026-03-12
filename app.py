@@ -277,13 +277,50 @@ with tab2:
 
         chart_data = None
 
+        # -------- Handle DataFrame --------
         if isinstance(result, pd.DataFrame):
+
             chart_data = result
 
+        # -------- Handle Series --------
         elif isinstance(result, pd.Series):
-            chart_data = result.reset_index()
 
+            chart_data = result.reset_index()
+            chart_data.columns = ["Category", "Value"]
+
+        # -------- Handle Dictionary --------
+        elif isinstance(result, dict):
+
+            st.subheader("📊 Analysis Results")
+
+            for key, value in result.items():
+
+                st.markdown(f"### {key}")
+
+                try:
+
+                    df_result = pd.DataFrame(value).reset_index()
+
+                    if df_result.shape[1] == 2:
+                        df_result.columns = ["Category", "Value"]
+
+                    st.dataframe(df_result, use_container_width=True)
+
+                    fig = px.bar(
+                        df_result,
+                        x=df_result.columns[0],
+                        y=df_result.columns[1],
+                        title=key
+                    )
+
+                    st.plotly_chart(fig, use_container_width=True)
+
+                except:
+                    st.write(value)
+
+        # -------- Other Results --------
         else:
+
             st.subheader("📊 Result")
             st.success(str(result))
         if chart_data is not None:
