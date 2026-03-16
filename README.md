@@ -70,7 +70,7 @@ AI-Business-Intelligence-Assistant
 Clone the repository:
 
 ```
-git clone https://github.com/Mohammedkaif2003/Mohammedkaif2003-ai_business_intelligence_assistant
+git clone https://github.com/Mohammedkaif2003/ai_business_intelligence_assistant
 cd Mohammedkaif2003-ai_business_intelligence_assistant
 ```
 
