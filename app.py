@@ -447,7 +447,8 @@ with tab2:
                 chart_data = result
             elif isinstance(result, pd.Series):
                 chart_data = result.reset_index()
-                chart_data.columns = ["Category", "Value"]
+                if chart_data.shape[1] == 2:
+                    chart_data.columns = ["Category", "Value"]
 
             # Detect matplotlib Axes objects (from .hist(), .plot(), etc.)
             # These are non-displayable — convert to a friendly message
