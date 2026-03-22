@@ -1,6 +1,6 @@
-# 📊 AI Company Data Analyst
+# 📊 AI Business Intelligence Assistant
 
-An AI-powered business intelligence tool that lets you **upload company datasets and ask questions in plain English**. Get instant data analysis, interactive charts, automated KPIs, revenue forecasting, and professional PDF reports — all powered by **Groq's LLaMA 3.3 70B** model.
+An AI-powered business intelligence tool that lets you **upload datasets and ask questions in plain English**. Get instant data analysis, interactive charts, automated KPIs, revenue forecasting, and professional PDF reports — all powered by **Groq’s LLaMA 3.3 70B** model.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.30+-FF4B4B?logo=streamlit&logoColor=white)
@@ -55,8 +55,8 @@ AI-generated code runs in a sandboxed environment with:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Mohammedkaif2003/campany_data_analyst_ai.git
-cd campany_data_analyst_ai
+git clone https://github.com/Mohammedkaif2003/ai_business_intelligence_assistant.git
+cd ai_business_intelligence_assistant
 
 # 2. Create and activate virtual environment
 python -m venv venv
@@ -111,21 +111,6 @@ The app opens at **http://localhost:8501** 🎉
 
 ---
 
-
-## Streamlit Cloud Deployment
-
-Go to **Streamlit App Settings → Secrets** and add:
-
-```
-GROQ_API_KEY = "your_api_key_here"
-```
-
-Access in code:
-
-```python
-import streamlit as st
-api_key = st.secrets["GROQ_API_KEY"]
-```
 ## 🛠️ How It Works
 
 ```
@@ -159,77 +144,6 @@ User uploads CSV / selects pre-loaded dataset
 
 ---
 
-
-# 💬 Example Queries
-
-Users can ask questions such as:
-
-```
-What are the top 5 products by revenue?
-Show monthly sales trends
-Which region has the highest revenue?
-What is the average sales value?
-Predict next month's revenue
-```
-
-The system will generate **charts, tables, and insights automatically**.
-
----
-
-# 📊 Example Outputs
-
-The assistant can generate:
-
-* Revenue charts
-* Product ranking analysis
-* Regional performance comparison
-* KPI summaries
-* Executive business insights
-* Downloadable analytics reports
-
----
-
-# 🧠 Technologies Used
-
-* **Python**
-* **Streamlit**
-* **Pandas**
-* **Plotly**
-* **Groq API**
-* **ReportLab**
-
----
-
-# 🔮 Future Improvements
-
-Possible upgrades for the system:
-
-* Chat history and conversation memory
-* Forecasting and prediction models
-* Anomaly detection
-* PowerPoint report generation
-* Voice query input
-* Multi-dataset analysis
-* Interactive dashboard filters
-
----
-
-# 👨‍💻 Author
-
-**Mohammed Kaif**
-
-AI Business Intelligence Assistant Project
-Developed as part of an **AI/Data Analytics Internship Project**
-
----
-
-# ⭐ Project Goal
-
-The goal of this project is to build an **AI-powered Business Intelligence Assistant** that allows organizations to analyze data through **natural language interaction instead of complex dashboards or queries**.
-
----
-
-If you find this project useful, consider giving it a ⭐ on GitHub!
 ## 📦 Dependencies
 
 | Package | Purpose |
