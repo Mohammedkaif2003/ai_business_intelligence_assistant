@@ -55,7 +55,7 @@ AI-generated code runs in a sandboxed environment with:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/AbdulWajid0/campany_data_analyst_ai.git
+git clone https://github.com/Mohammedkaif2003/campany_data_analyst_ai.git
 cd campany_data_analyst_ai
 
 # 2. Create and activate virtual environment
