@@ -208,17 +208,8 @@ The app comes with 3 pre-loaded datasets for testing:
 4. Push to the branch (`git push origin feature/my-feature`)
 5. Open a Pull Request
 
----
 
-## 👥 Team
-
-| Name | Role | GitHub |
-|------|------|--------|
-| **Abdul Wajid** | Developer | [@AbdulWajid0](https://github.com/AbdulWajid0) |
-| **Mohammed Kaif** | Developer | [@Mohammedkaif2003](https://github.com/Mohammedkaif2003) |
-
----
 
 <div align="center">
-  <b>Built with ❤️ using Streamlit + Groq AI</b>
+  <b>Built with using Streamlit + Groq AI</b>
 </div>
