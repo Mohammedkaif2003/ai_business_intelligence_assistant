@@ -370,21 +370,23 @@ with tab2:
             # ── Dictionary results ──
             if isinstance(result, dict):
                 for key, value in result.items():
-                    st.markdown(f"**{key}**")
                     try:
+                        if "<Axes:" in str(value) or "<AxesSubplot" in str(value):
+                            continue  # Skip Axes objects
                         df_result = pd.DataFrame(value).reset_index()
                         if df_result.shape[1] == 2:
                             df_result.columns = ["Category", "Value"]
+                        st.markdown(f"**{key}**")
                         st.dataframe(df_result, use_container_width=True)
                         fig = px.bar(
                             df_result,
                             x=df_result.columns[0],
                             y=df_result.columns[1],
-                            title=key
+                            title=str(key)
                         )
                         st.plotly_chart(fig, use_container_width=True)
                     except:
-                        st.write(value)
+                        pass
 
             # ── DataFrame / Series results ──
             elif chart_data is not None:
@@ -549,6 +551,11 @@ with tab2:
         st.session_state.messages.append({"role": "user", "content": query})
         if isinstance(result, pd.DataFrame):
             preview = result.head(5).to_string(index=False)
+            st.session_state.messages.append(
+                {"role": "assistant", "content": f"Here are the top results:\n\n{preview}"}
+            )
+        elif isinstance(result, pd.Series):
+            preview = result.head(5).to_string()
             st.session_state.messages.append(
                 {"role": "assistant", "content": f"Here are the top results:\n\n{preview}"}
             )
