@@ -5,6 +5,16 @@ import plotly.graph_objects as go
 import os
 from dotenv import load_dotenv
 
+# New separate files
+from config import *
+from styles import inject_styles
+from ui_components import (
+    render_kpi_cards, render_section_header, render_chart_card,
+    render_user_bubble, render_assistant_bubble,
+    render_sidebar_dataset_badge, render_insight_card
+)
+
+# Existing modules (do not rename)
 from modules.dataset_analyzer import analyze_dataset
 from modules.executive_summary import generate_executive_summary
 from modules.groq_ai import suggest_business_questions
@@ -21,7 +31,6 @@ from modules.ai_conversation import generate_conversational_response, generate_e
 
 # Load environment variables
 load_dotenv()
-
 api_key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY", None)
 
 if not api_key:
@@ -29,66 +38,38 @@ if not api_key:
     st.stop()
 
 st.set_page_config(
-    page_title="AI Business Intelligence Assistant",
-    page_icon="📊",
+    page_title=APP_TITLE,
+    page_icon=APP_ICON,
     layout="wide"
 )
 
-# ---------- UI STYLE ----------
+inject_styles(st)
 
-st.markdown("""
-<style>
-/* Dataframe styling */
-[data-testid="stDataFrame"] {
-    border-radius:12px;
-}
+# ---------- SIDEBAR & DATASET LOADING ----------
 
-/* Tabs container */
-.stTabs [data-baseweb="tab-list"] {
-    gap:10px;
-}
-
-/* Tabs */
-.stTabs [data-baseweb="tab"] {
-    background: var(--secondary-background-color);
-    padding:10px 22px;
-    border-radius:8px;
-    font-weight:600;
-}
-
-/* Active tab */
-.stTabs [aria-selected="true"] {
-    background-color:#2563EB;
-    color:white;
-}
-
-/* Hover */
-.stTabs [data-baseweb="tab"]:hover {
-    background: rgba(128,128,128,0.15);
-}
-
-/* KPI card */
-.kpi-card {
-    padding:16px;
-    border-radius:12px;
-    border:1px solid rgba(128,128,128,0.2);
-    background: var(--secondary-background-color);
-}
-
-/* Section headers */
-.section-header {
-    color: #2563EB;
-    font-weight: 700;
-}
-
-</style>
+st.sidebar.markdown(f"""
+<div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); padding: 24px 20px; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); border: 1px solid rgba(255,255,255,0.05); position: relative; overflow: hidden;">
+    <!-- Decorative glow -->
+    <div style="position: absolute; top: -50%; right: -20%; width: 120px; height: 120px; background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);"></div>
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+        <div style="background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);">
+            {APP_ICON}
+        </div>
+        <div style="font-size: 22px; font-weight: 800; background: linear-gradient(to right, #F8FAFC, #94A3B8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -0.5px;">
+            {APP_TITLE}
+        </div>
+    </div>
+    <div style="color: #64748B; font-size: 12px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; margin-left: 48px;">
+        Enterprise Data Suite
+    </div>
+</div>
 """, unsafe_allow_html=True)
 
-st.title("📊 AI Business Intelligence Assistant")
-st.write("Upload data → Ask questions → Get insights, charts, forecasts, and reports.")
-
-
-# ---------- DATASET LOADING ----------
+st.sidebar.subheader("📂 Select Data Source")
+data_source = st.sidebar.radio(
+    "Choose how to load data:",
+    ["Upload CSV", "Use Pre-loaded Dataset"]
+)
 
 @st.cache_data
 def load_dataset(file):
@@ -96,212 +77,79 @@ def load_dataset(file):
     df = normalize_columns(df)
     return df
 
-
 @st.cache_data
 def load_local_dataset(path):
     df = pd.read_csv(path)
     df = normalize_columns(df)
     return df
 
-
-# ---------- DATA SOURCE SELECTION ----------
-
-st.subheader("📂 Select Data Source")
-
-data_source = st.radio(
-    "Choose how to load data:",
-    ["Upload CSV", "Use Pre-loaded Dataset"],
-    horizontal=True
-)
-
-df = None
+selected_key = None
+df_to_load = None
 
 if data_source == "Upload CSV":
-    uploaded_file = st.file_uploader("Upload CSV Dataset", type=["csv"])
+    uploaded_file = st.sidebar.file_uploader("Upload CSV Dataset", type=["csv"])
     if uploaded_file:
-        df = load_dataset(uploaded_file)
-        st.session_state.df = df
-        st.session_state.dataset_name = uploaded_file.name
-        st.success(f"✅ Dataset '{uploaded_file.name}' loaded successfully")
-
+        selected_key = uploaded_file.name
+        df_to_load = load_dataset(uploaded_file)
+        
 elif data_source == "Use Pre-loaded Dataset":
-
-    data_dir = os.path.join(os.path.dirname(__file__), "data", "raw")
-
+    data_dir = os.path.join(os.path.dirname(__file__), DATA_DIR)
     if os.path.exists(data_dir):
-
         csv_files = [f for f in os.listdir(data_dir) if f.endswith(".csv")]
-
         if csv_files:
-
-            # Display friendly names
-            friendly_names = {
-                "sales_data.csv": "📈 Sales Data (5000 records — products, revenue, profit)",
-                "hr_data.csv": "👥 HR Data (500 records — employees, salary, attrition)",
-                "finance_data.csv": "💰 Finance Data (56 records — budget, actuals, variance)"
-            }
-
-            display_names = [friendly_names.get(f, f) for f in csv_files]
-
-            selected_display = st.selectbox("Select a dataset:", display_names)
+            display_names = [FRIENDLY_DATASET_NAMES.get(f, f) for f in csv_files]
+            selected_display = st.sidebar.selectbox("Select a dataset:", display_names)
             selected_file = csv_files[display_names.index(selected_display)]
-
-            file_path = os.path.join(data_dir, selected_file)
-            df = load_local_dataset(file_path)
-            st.session_state.df = df
-            st.session_state.dataset_name = selected_file
-            st.success(f"✅ Dataset '{selected_file}' loaded successfully")
-
+            selected_key = selected_file
+            file_path_to_load = os.path.join(data_dir, selected_file)
+            df_to_load = load_local_dataset(file_path_to_load)
         else:
-            st.warning("No CSV files found in data/raw/ folder.")
+            st.sidebar.warning(f"No CSV files found in {DATA_DIR} folder.")
     else:
-        st.warning("data/raw/ folder not found. Please create it and add CSV files.")
+        st.sidebar.warning(f"{DATA_DIR} folder not found.")
 
-if "df" not in st.session_state:
-    st.info("👆 Please select a data source above to get started.")
+if selected_key:
+    if st.session_state.get("active_dataset_key") != selected_key:
+        st.session_state["df"] = df_to_load
+        st.session_state["active_dataset_key"] = selected_key
+        st.session_state["dataset_name"] = selected_key
+        st.session_state["schema"] = analyze_dataset(df_to_load)
+        st.sidebar.success(f"✅ Dataset '{selected_key}' loaded successfully")
+
+if "df" not in st.session_state or st.session_state["df"] is None:
+    st.info("Please select a data source in the sidebar to get started.")
     st.stop()
 
-df = st.session_state.df
+df = st.session_state["df"]
+schema = st.session_state.get("schema", analyze_dataset(df))
 
-schema = analyze_dataset(df)
+render_sidebar_dataset_badge(st.session_state["dataset_name"], df.shape[0], df.shape[1])
 
-# ---------- DATASET METRICS ----------
+# ---------- MAIN AREA ----------
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("📋 Rows", f"{df.shape[0]:,}")
-col2.metric("📊 Columns", df.shape[1])
-col3.metric("🔢 Numeric Columns", len(schema["numeric_columns"]))
-col4.metric("🏷 Categorical Columns", len(schema["categorical_columns"]))
-
-st.divider()
-
-st.subheader("📋 Dataset Overview")
-
-st.write(
-    f"This dataset contains **{schema['rows']:,} rows** and **{schema['columns']} columns**."
-)
-
-if schema["numeric_columns"]:
-    st.write(
-        f"📊 Numeric metrics: `{', '.join(schema['numeric_columns'][:5])}`"
-    )
-
-if schema["categorical_columns"]:
-    st.write(
-        f"🏷 Categorical dimensions: `{', '.join(schema['categorical_columns'][:5])}`"
-    )
-
-if schema["datetime_columns"]:
-    st.write(
-        f"📅 Date columns: `{', '.join(schema['datetime_columns'])}`"
-    )
-
-st.divider()
-
-# ---------- KPI SECTION ----------
-
-st.subheader("📊 Key Performance Indicators")
+render_section_header("📊 Data Intelligence Dashboard", "Overview of your loaded dataset metrics and trends.")
 
 kpis = generate_kpis(df)
+render_kpi_cards(kpis)
 
-if len(kpis) > 0:
-
-    cols = st.columns(len(kpis))
-
-    icons = ["💰", "📦", "📈", "📊", "🏷"]
-
-    for i, kpi in enumerate(kpis):
-
-        with cols[i]:
-
-            st.markdown(f"""
-            <div class="kpi-card">
-
-            <div style="font-size:14px;opacity:0.8">
-            {icons[i % len(icons)]} {kpi['metric']}
-            </div>
-
-            <div style="font-size:28px;font-weight:700;margin-top:6px">
-            {kpi['total']:,.2f}
-            </div>
-
-            <div style="font-size:13px;color:#10B981;margin-top:4px">
-            Avg {kpi['average']:,.2f}
-            </div>
-
-            </div>
-            """, unsafe_allow_html=True)
-
-else:
-
-    st.info("No numeric columns available for KPI metrics.")
-
-# ---------- TREND ANALYSIS ----------
-
-date_cols = df.select_dtypes(include=["datetime", "datetime64"]).columns
-num_cols = df.select_dtypes(include="number").columns
-
-if len(date_cols) > 0 and len(num_cols) > 0:
-
-    st.subheader("📈 Trend Analysis")
-
-    trend_col = num_cols[0]
-
-    fig = px.line(
-        df,
-        x=date_cols[0],
-        y=trend_col,
-        title=f"{trend_col} Trend Over Time"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-st.subheader("🔎 Automatic Dataset Insights")
-
-auto_insights = generate_auto_insights(df)
-
-for insight in auto_insights:
-    st.write("•", insight)
-
-st.divider()
-
-st.subheader("🧠 AI Executive Insight")
-
-if len(schema["numeric_columns"]) > 0:
-
-    metric = schema["numeric_columns"][0]
-
-    top_value = df[metric].max()
-    avg_value = df[metric].mean()
-
-    st.info(
-        f"The dataset shows a peak {metric} value of {top_value:,.2f}. "
-        f"The average performance is {avg_value:,.2f}, indicating potential "
-        f"opportunities to improve lower-performing segments."
-    )
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "analysis_history" not in st.session_state:
-    st.session_state.analysis_history = []
-
-# ---------- MAIN TABS ----------
+st.markdown("<br>", unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Data Overview",
-    "🤖 AI Data Analyst",
+    "🤖 AI Analyst",
     "🔮 Forecasting",
-    "📑 Executive Reports"
+    "📑 Reports"
 ])
 
+# ---------- TAB 1: DATA OVERVIEW ----------
 with tab1:
-
+    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
     st.subheader("Dataset Preview")
     st.dataframe(df.head(20), use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
+    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
     st.subheader("Column Details")
-
     col_info = pd.DataFrame({
         "Column": df.columns,
         "Type": df.dtypes.astype(str).values,
@@ -310,259 +158,227 @@ with tab1:
         "Unique Values": df.nunique().values,
         "Example Value": [str(df[col].dropna().iloc[0]) if len(df[col].dropna()) > 0 else "N/A" for col in df.columns]
     })
-
     st.dataframe(col_info, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
+    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
     st.subheader("Statistics")
     st.dataframe(df.describe(), use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
+    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
+    st.subheader("🔎 Automatic Dataset Insights")
+    auto_insights = generate_auto_insights(df)
+    for insight in auto_insights:
+        st.write("•", insight)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ---------- TAB 2: AI ANALYST ----------
 with tab2:
+    col_header, col_btn = st.columns([4, 1])
+    with col_header:
+        render_section_header("🤖 AI Data Analyst", "Chat with your data using Groq AI.")
+    with col_btn:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🗑️ Clear Chat", key="clear_chat_btn", use_container_width=True):
+            st.session_state.chat_history = []
+            st.session_state.messages = []
+            st.session_state.analysis_history = []
+            for key in ["analysis_result", "analysis_query", "analysis_insight", "chart_data", "report_charts"]:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
 
-    st.subheader("Ask Questions About Your Data")
-
-    # Initialize chat history with rich content support
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
-
-    # Clear Chat button at the top
-    if st.button("🗑️ Clear Chat", key="clear_chat_btn"):
-        st.session_state.chat_history = []
+    if "messages" not in st.session_state:
         st.session_state.messages = []
+    if "analysis_history" not in st.session_state:
         st.session_state.analysis_history = []
 
-        for key in [
-            "analysis_result",
-            "analysis_query",
-            "analysis_insight",
-            "chart_data",
-            "report_charts"
-        ]:
-            if key in st.session_state:
-                del st.session_state[key]
-
-        st.rerun()
-
-    # ── Render the full chat history ──
+    # Chat history
     for entry in st.session_state.chat_history:
+        render_user_bubble(entry["query"])
 
-        # User message
-        with st.chat_message("user"):
-            st.markdown(entry["query"])
-
-        # Assistant message with rich content
-        with st.chat_message("assistant"):
-
-            # ── Conversational AI response (shown first) ──
+        if entry.get("ai_response") or entry.get("chart_data") is not None or entry.get("result") is not None:
+            ai_msg_html = ""
             if entry.get("ai_response"):
-                st.markdown(entry["ai_response"])
-                st.divider()
+                ai_msg_html += entry["ai_response"] + "<br><br>"
+            
+            if ai_msg_html:
+                render_assistant_bubble(ai_msg_html)
 
-            # Show the AI code in a collapsible
+            # Code
             if entry.get("code"):
                 with st.expander("📝 View AI Generated Code", expanded=False):
                     st.code(entry["code"], language="python")
 
-            result = entry.get("result")
+            # Chart Data
             chart_data = entry.get("chart_data")
-            insight = entry.get("insight", "")
-            summary = entry.get("summary", [])
-
-            # ── Dictionary results ──
-            if isinstance(result, dict):
-                for key, value in result.items():
-                    try:
-                        if "<Axes:" in str(value) or "<AxesSubplot" in str(value):
-                            continue  # Skip Axes objects
-                        df_result = pd.DataFrame(value).reset_index()
-                        if df_result.shape[1] == 2:
-                            df_result.columns = ["Category", "Value"]
-                        st.markdown(f"**{key}**")
-                        st.dataframe(df_result, use_container_width=True)
-                        fig = px.bar(
-                            df_result,
-                            x=df_result.columns[0],
-                            y=df_result.columns[1],
-                            title=str(key)
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    except:
-                        pass
-
-            # ── DataFrame / Series results ──
-            elif chart_data is not None:
-
-                col1, col2 = st.columns([1, 2])
-
-                with col1:
-                    st.markdown("**📋 Data Table**")
-                    st.dataframe(chart_data, use_container_width=True)
-
-                with col2:
-                    st.markdown("**📊 Visual Analysis**")
-                    charts = entry.get("charts", [])
-                    for i, fig in enumerate(charts):
-                        st.plotly_chart(fig, use_container_width=True, key=f"hist_chart_{id(entry)}_{i}")
-
-                # Insight
-                if insight:
-                    st.info(f"🧠 **Business Insight:** {insight}")
-
-                # Executive summary bullets
-                if summary:
-                    with st.expander("📑 Executive Summary", expanded=False):
-                        for line in summary:
-                            st.write("•", line)
-
-            # ── Simple text / error results ──
+            if chart_data is not None:
+                st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
+                st.markdown("**📋 Data Table**")
+                st.dataframe(chart_data, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                charts = entry.get("charts", [])
+                if charts:
+                    if len(charts) == 2:
+                        c1, c2 = st.columns(2)
+                        with c1: render_chart_card(charts[0], c1)
+                        with c2: render_chart_card(charts[1], c2)
+                    else:
+                        for fig in charts:
+                            render_chart_card(fig, st)
             else:
-                if not entry.get("ai_response"):
-                    st.write(str(result))
+                result = entry.get("result")
+                if isinstance(result, dict):
+                    st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
+                    for key, value in result.items():
+                        try:
+                            if "<Axes:" in str(value) or "<AxesSubplot" in str(value):
+                                continue
+                            df_result = pd.DataFrame(value).reset_index()
+                            if df_result.shape[1] == 2:
+                                df_result.columns = ["Category", "Value"]
+                            st.markdown(f"**{key}**")
+                            st.dataframe(df_result, use_container_width=True)
+                            fig = px.bar(df_result, x=df_result.columns[0], y=df_result.columns[1], title=str(key))
+                            render_chart_card(fig, st)
+                        except:
+                            pass
+                    st.markdown('</div>', unsafe_allow_html=True)
+                elif not entry.get("ai_response"):
+                    if str(result) != "None":
+                        st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
+                        st.write(str(result))
+                        st.markdown('</div>', unsafe_allow_html=True)
 
-            # Follow-up questions
+            insight = entry.get("insight", "")
+            if insight:
+                render_insight_card(insight)
+                
+            summary = entry.get("summary", [])
+            if summary:
+                with st.expander("📑 Executive Summary", expanded=False):
+                    for line in summary:
+                        st.write("•", line)
+
             if entry.get("suggestions"):
                 with st.expander("💡 Suggested Follow-Up Questions", expanded=False):
                     st.markdown(entry["suggestions"])
 
-    # ── Chat input (always at bottom) ──
     query = st.chat_input("Ask something about your dataset...")
-
     if query:
+        render_user_bubble(query)
 
-        # Show user message immediately
-        with st.chat_message("user"):
-            st.markdown(query)
+        with st.spinner("🔍 AI analyzing your dataset..."):
+            code = generate_analysis_code(api_key, query, df, schema)
+            result = execute_code(code, df)
 
-        # Show assistant thinking
-        with st.chat_message("assistant"):
-            with st.spinner("🔍 AI analyzing your dataset..."):
-                code = generate_analysis_code(api_key, query, df, schema)
-                result = execute_code(code, df)
+        chart_data = None
+        insight = ""
+        summary_list = []
+        chart_figs = []
+        ai_response = ""
 
-            # Determine chart_data
-            chart_data = None
-            insight = ""
-            summary_list = []
-            chart_figs = []
-            ai_response = ""
-
-            if isinstance(result, pd.DataFrame):
-                chart_data = result
-            elif isinstance(result, pd.Series):
+        if isinstance(result, pd.DataFrame):
+            chart_data = result
+        elif isinstance(result, pd.Series):
+            try:
                 chart_data = result.reset_index()
-                if chart_data.shape[1] == 2:
-                    chart_data.columns = ["Category", "Value"]
+            except ValueError:
+                chart_data = result.reset_index(drop=True).to_frame()
+            if chart_data.shape[1] == 2:
+                chart_data.columns = ["Category", "Value"]
 
-            # Detect matplotlib Axes objects (from .hist(), .plot(), etc.)
-            # These are non-displayable — convert to a friendly message
-            result_str = str(result)
-            is_axes_result = "<Axes:" in result_str or "<AxesSubplot" in result_str
-            if is_axes_result and chart_data is None:
-                result = "The analysis generated visual charts. Please see the AI response below for a summary of the data patterns."
+        result_str = str(result)
+        is_axes_result = "<Axes:" in result_str or "<AxesSubplot" in result_str
+        if is_axes_result and chart_data is None:
+            result = "The analysis generated visual charts. Please see the AI response below for a summary of the data patterns."
 
-            # Check if result is an error
-            is_error = isinstance(result, str) and (
-                "error" in result.lower() or "failed" in result.lower()
-                or "traceback" in result.lower()
-            )
+        is_error = isinstance(result, str) and ("error" in result.lower() or "failed" in result.lower() or "traceback" in result.lower())
 
-            # ── Generate conversational AI response ──
-            if is_error:
-                with st.spinner("💭 Thinking..."):
-                    ai_response = generate_error_response(query, str(result))
-            else:
-                if chart_data is not None:
-                    insight = generate_business_insight(chart_data)
-                    st.session_state.analysis_insight = insight
-                with st.spinner("💭 Preparing response..."):
-                    ai_response = generate_conversational_response(query, result, insight)
+        if is_error:
+            with st.spinner("💭 Thinking..."):
+                ai_response = generate_error_response(query, str(result))
+        else:
+            if chart_data is not None:
+                insight = generate_business_insight(chart_data)
+                st.session_state.analysis_insight = insight
+            with st.spinner("💭 Preparing response..."):
+                ai_response = generate_conversational_response(query, result, insight)
 
-            # ── Show the conversational response first ──
-            if ai_response:
-                st.markdown(ai_response)
-                st.divider()
+        if ai_response:
+            render_assistant_bubble(ai_response)
 
-            # Show the code
-            with st.expander("📝 View AI Generated Code", expanded=False):
-                st.code(code, language="python")
+        with st.expander("📝 View AI Generated Code", expanded=False):
+            st.code(code, language="python")
 
-            # ── Dictionary results ──
+        if chart_data is not None:
+            st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
+            st.markdown("**📋 Data Table**")
+            st.dataframe(chart_data, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            chart_figs = auto_visualize(chart_data)
+            if chart_figs:
+                if len(chart_figs) == 2:
+                    c1, c2 = st.columns(2)
+                    with c1: render_chart_card(chart_figs[0], c1)
+                    with c2: render_chart_card(chart_figs[1], c2)
+                else:
+                    for fig in chart_figs:
+                        render_chart_card(fig, st)
+
+            if insight:
+                render_insight_card(insight)
+
+            summary_list = generate_executive_summary(chart_data)
+            if summary_list:
+                with st.expander("📑 Executive Summary", expanded=False):
+                    for line in summary_list:
+                        st.write("•", line)
+        else:
             if isinstance(result, dict):
-                # Check if dict contains displayable data (not Axes objects)
                 has_displayable = False
+                st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
                 for key, value in result.items():
                     try:
                         if "<Axes:" in str(value) or "<AxesSubplot" in str(value):
-                            continue  # Skip Axes objects
+                            continue
                         df_result = pd.DataFrame(value).reset_index()
                         if df_result.shape[1] == 2:
                             df_result.columns = ["Category", "Value"]
                         st.markdown(f"**{key}**")
                         st.dataframe(df_result, use_container_width=True)
-                        fig = px.bar(
-                            df_result,
-                            x=df_result.columns[0],
-                            y=df_result.columns[1],
-                            title=str(key)
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
+                        fig = px.bar(df_result, x=df_result.columns[0], y=df_result.columns[1], title=str(key))
+                        render_chart_card(fig, st)
                         has_displayable = True
                     except:
                         pass
+                st.markdown('</div>', unsafe_allow_html=True)
                 if not has_displayable and not ai_response:
-                    st.info("The AI analyzed the data but the result format couldn't be displayed as a table. See the AI response above for insights.")
-
-            # ── DataFrame / Series results ──
-            elif chart_data is not None:
-
-                col1, col2 = st.columns([1, 2])
-
-                with col1:
-                    st.markdown("**📋 Data Table**")
-                    st.dataframe(chart_data, use_container_width=True)
-
-                with col2:
-                    st.markdown("**📊 Visual Analysis**")
-                    chart_figs = auto_visualize(chart_data)
-                    for i, fig in enumerate(chart_figs):
-                        st.plotly_chart(fig, use_container_width=True, key=f"new_chart_{i}")
-
-                # Business insight
-                if insight:
-                    st.info(f"🧠 **Business Insight:** {insight}")
-
-                # Executive summary
-                summary_list = generate_executive_summary(chart_data)
-                if summary_list:
-                    with st.expander("📑 Executive Summary", expanded=False):
-                        for line in summary_list:
-                            st.write("•", line)
-
-            # ── Simple text / error results ──
-            elif not ai_response:
+                    st.info("The AI analyzed the data but the result format couldn't be displayed as a table.")
+            elif not ai_response and str(result) != "None":
+                st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
                 st.write(str(result))
+                st.markdown('</div>', unsafe_allow_html=True)
 
-            # Follow-up questions
-            with st.expander("💡 Suggested Follow-Up Questions", expanded=False):
-                with st.spinner("Generating follow-up questions..."):
-                    suggestions = suggest_business_questions(query, df, schema)
-                st.markdown(suggestions)
+        with st.expander("💡 Suggested Follow-Up Questions", expanded=False):
+            with st.spinner("Generating follow-up questions..."):
+                suggestions = suggest_business_questions(query, df, schema)
+            st.markdown(suggestions)
 
-        # ── Persist everything to session state ──
         st.session_state.messages.append({"role": "user", "content": query})
         if isinstance(result, pd.DataFrame):
             preview = result.head(5).to_string(index=False)
-            st.session_state.messages.append(
-                {"role": "assistant", "content": f"Here are the top results:\n\n{preview}"}
-            )
+            st.session_state.messages.append({"role": "assistant", "content": f"Here are the top results:\n\n{preview}"})
         elif isinstance(result, pd.Series):
             preview = result.head(5).to_string()
-            st.session_state.messages.append(
-                {"role": "assistant", "content": f"Here are the top results:\n\n{preview}"}
-            )
+            st.session_state.messages.append({"role": "assistant", "content": f"Here are the top results:\n\n{preview}"})
         else:
-            st.session_state.messages.append(
-                {"role": "assistant", "content": str(result)}
-            )
+            st.session_state.messages.append({"role": "assistant", "content": str(result)})
 
         st.session_state.analysis_result = result
         st.session_state.analysis_query = query
@@ -570,24 +386,19 @@ with tab2:
             st.session_state.chart_data = chart_data
             st.session_state.report_charts = chart_figs
 
-        # Save to analysis history (for PDF report)
-        # Use ai_response as fallback insight instead of raw str(result)
         report_insight = insight if insight else (ai_response if ai_response else "Analysis completed.")
-        # Sanitize: remove any Axes object representations
         if "<Axes:" in str(report_insight) or "<AxesSubplot" in str(report_insight):
             report_insight = ai_response if ai_response else "Analysis completed — see AI response for details."
 
-        history_entry = {
+        st.session_state.analysis_history.append({
             "query": query,
             "result": result if not is_axes_result else None,
             "code": code,
             "insight": report_insight,
             "ai_response": ai_response,
-        }
-        st.session_state.analysis_history.append(history_entry)
+        })
 
-        # Save to chat_history (for rendering on rerun)
-        chat_entry = {
+        st.session_state.chat_history.append({
             "query": query,
             "result": result,
             "code": code,
@@ -597,65 +408,38 @@ with tab2:
             "charts": chart_figs,
             "ai_response": ai_response,
             "suggestions": suggestions if 'suggestions' in dir() else "",
-        }
-        st.session_state.chat_history.append(chat_entry)
+        })
+        st.rerun()
 
-
-# ---------- FORECASTING TAB (NEW) ----------
-
+# ---------- TAB 3: FORECASTING ----------
 with tab3:
-
-    st.subheader("🔮 Revenue / Sales Forecasting")
-    st.write("Predict future trends based on historical data patterns.")
-
+    render_section_header("🔮 Revenue / Sales Forecasting", "Predict future trends based on historical data patterns.")
+    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
+    
     forecast_periods = st.slider("Forecast periods (months):", min_value=1, max_value=12, value=3)
 
     if st.button("Generate Forecast", key="forecast_btn"):
-
         with st.spinner("Running forecast analysis..."):
             forecast_result = forecast_revenue(df, periods=forecast_periods)
 
         if forecast_result["available"]:
-
             st.success(forecast_result["message"])
 
-            # Forecast table
             st.subheader("📋 Forecast Values")
             st.dataframe(forecast_result["forecast_df"], use_container_width=True)
 
-            # Trend info
             trend = forecast_result["trend"]
             metric = forecast_result["metric"]
             trend_icon = "📈" if trend == "increasing" else "📉" if trend == "declining" else "➡"
             st.info(f"{trend_icon} The {metric} trend is **{trend}** (slope: {forecast_result['slope']:,.2f} per month)")
 
-            # Combined chart: historical + forecast
             st.subheader("📊 Forecast Visualization")
-
             hist_df = forecast_result["historical_df"]
             fore_df = forecast_result["forecast_df"]
 
             fig = go.Figure()
-
-            # Historical line
-            fig.add_trace(go.Scatter(
-                x=hist_df["Date"],
-                y=hist_df[metric],
-                mode="lines+markers",
-                name="Historical",
-                line=dict(color="#2563EB", width=2)
-            ))
-
-            # Forecast line
-            fig.add_trace(go.Scatter(
-                x=fore_df["Date"],
-                y=fore_df["Predicted"],
-                mode="lines+markers",
-                name="Forecast",
-                line=dict(color="#F59E0B", width=2, dash="dash")
-            ))
-
-            # Confidence interval
+            fig.add_trace(go.Scatter(x=hist_df["Date"], y=hist_df[metric], mode="lines+markers", name="Historical", line=dict(color="#2563EB", width=2)))
+            fig.add_trace(go.Scatter(x=fore_df["Date"], y=fore_df["Predicted"], mode="lines+markers", name="Forecast", line=dict(color="#F59E0B", width=2, dash="dash")))
             fig.add_trace(go.Scatter(
                 x=pd.concat([fore_df["Date"], fore_df["Date"][::-1]]),
                 y=pd.concat([fore_df["Upper Bound"], fore_df["Lower Bound"][::-1]]),
@@ -665,67 +449,39 @@ with tab3:
                 name="95% Confidence Interval"
             ))
 
-            fig.update_layout(
-                title=f"{metric} — Historical + Forecast",
-                xaxis_title="Date",
-                yaxis_title=metric,
-                template="plotly_white",
-                height=500,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
-
+            render_chart_card(fig, st)
         else:
-
             st.warning(forecast_result["message"])
             st.info("💡 Tip: Forecasting works best with datasets that have date columns and numeric metrics like revenue or sales.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-
-# ---------- EXECUTIVE REPORTS TAB ----------
-
+# ---------- TAB 4: REPORTS ----------
 with tab4:
-
+    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
     st.markdown("<h3 style='color: #1E293B; margin-bottom: 0px;'>📑 Executive Report Generator</h3>", unsafe_allow_html=True)
     st.markdown("<p style='color: #64748B; font-size: 14px;'>Compile your entire AI analysis session into a branded, professional PDF report.</p>", unsafe_allow_html=True)
-    
     st.markdown("<hr style='margin-top: 5px; margin-bottom: 25px;'>", unsafe_allow_html=True)
 
     history = st.session_state.get("analysis_history", [])
 
     if len(history) == 0:
-
         st.info("💡 **Your report is currently empty.** Head over to the 'AI Data Analyst' tab and ask a question to start building your report!")
-
     else:
-
         col1, col2 = st.columns([3, 2])
         
         with col1:
             st.markdown(f"#### 📋 Report Contents ({len(history)} Analyses)")
             st.write("The following queries will be included as dedicated sections in your PDF report:")
-            
             for i, entry in enumerate(history, 1):
-                st.markdown(f"""
-                <div style="
-                    background: #F8FAFC; 
-                    border-left: 4px solid #F59E0B; 
-                    padding: 12px 16px; 
-                    margin-bottom: 12px; 
-                    border-radius: 4px;
-                    border-top: 1px solid #E2E8F0;
-                    border-bottom: 1px solid #E2E8F0;
-                    border-right: 1px solid #E2E8F0;
-                    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-                ">
+                st.markdown(f'''
+                <div style="background: #F8FAFC; border-left: 4px solid #F59E0B; padding: 12px 16px; margin-bottom: 12px; border-radius: 4px; border: 1px solid #E2E8F0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                     <div style="color: #64748B; font-size: 11px; font-weight: bold; margin-bottom: 4px;">ANALYSIS #{i}</div>
                     <div style="color: #1E293B; font-weight: 600; font-size: 15px;">"{entry['query']}"</div>
                 </div>
-                """, unsafe_allow_html=True)
+                ''', unsafe_allow_html=True)
 
         with col2:
             st.markdown("#### ⚙️ Report Configuration")
-            
             st.markdown("""
             <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #E2E8F0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
                 <div style="margin-bottom: 15px;">
@@ -746,34 +502,16 @@ with tab4:
             """, unsafe_allow_html=True)
             
             if st.button("📄 Generate Professional PDF", type="primary", use_container_width=True):
-
                 with st.spinner("Compiling and formatting your professional report..."):
-
-                    file_path = generate_pdf(
-                        query=None,
-                        summary_text=None,
-                        dataframe=None,
-                        charts=None,
-                        analysis_history=history
-                    )
-
+                    file_path = generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, analysis_history=history)
                 with open(file_path, "rb") as file:
-
-                    st.download_button(
-                        "📥 Download PDF Report",
-                        data=file,
-                        file_name="AI_Executive_Report.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-
+                    st.download_button("📥 Download PDF Report", data=file, file_name="AI_Executive_Report.pdf", mime="application/pdf", use_container_width=True)
                 st.success("✅ Report generated successfully!")
-                
             st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #94A3B8; font-size: 12px; margin-top: 20px;">
-    <strong>AI Business Intelligence Assistant</strong> • Powered by Groq AI + Streamlit
+st.markdown(f"""
+<div style="text-align:center; color:#94A3B8; font-size:12px; margin-top:2rem; padding:1rem; border-top: 1px solid #E2E8F0;">
+  {APP_TITLE} v{APP_VERSION} · Powered by Groq AI
 </div>
 """, unsafe_allow_html=True)

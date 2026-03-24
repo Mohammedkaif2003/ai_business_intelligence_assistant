@@ -1,10 +1,10 @@
-# 📊 AI Business Intelligence Assistant — Project Documentation
+# ⚡ Apex Analytics — Enterprise Data Suite Documentation
 
 ---
 
 ## 1. Project Overview
 
-The **AI Business Intelligence Assistant** is a Streamlit-based web application that allows users to upload business datasets (CSV files) and interact with them using natural language queries powered by **Groq's LLaMA 3.3 70B AI model**.
+**Apex Analytics** is an enterprise-grade, Streamlit-based Business Intelligence application. It allows users to upload business datasets (CSV files) and interact with them using natural language queries powered by **Groq's advanced LLaMA models**, functioning natively as a Senior Data Analyst.
 
 The application transforms raw data into actionable business intelligence by providing:
 
@@ -18,19 +18,19 @@ The application transforms raw data into actionable business intelligence by pro
 
 | Component        | Technology                        |
 |------------------|-----------------------------------|
-| Frontend / UI    | Streamlit (Python)                |
-| AI Engine        | Groq API (LLaMA 3.3 70B)         |
+| Frontend / UI    | Streamlit, Tailwind CSS (Injected)|
+| AI Engine        | Groq API (LLaMA Models)           |
 | Data Processing  | Pandas, NumPy                     |
 | Visualizations   | Plotly Express, Plotly Graph Objects |
+| Static Charting  | Kaleido (Plotly → PNG Export)    |
 | PDF Generation   | ReportLab                         |
-| Charts (PDF)     | Matplotlib                        |
-| Environment      | Python 3.10.1, python-dotenv      |
+| Environment      | Python 3.10+, python-dotenv       |
 
 ### Runtime Requirements
 
 ```
 streamlit, pandas, numpy, matplotlib, seaborn, plotly
-scikit-learn, statsmodels, joblib, groq, python-dotenv, reportlab
+scikit-learn, statsmodels, joblib, groq, python-dotenv, reportlab, kaleido
 ```
 
 ---
@@ -40,9 +40,11 @@ scikit-learn, statsmodels, joblib, groq, python-dotenv, reportlab
 ```
 ai_chatbat_cam_anaylz/
 │
-├── app.py                          # Main Streamlit application (721 lines)
+├── app.py                          # Main Streamlit application
+├── config.py                       # App constants, layout, & branding config
+├── styles.py                       # Tailwind frontend styling injector
+├── ui_components.py                # Reusable KPI and section header blocks
 ├── .env                            # Environment variables (GROQ_API_KEY)
-├── .gitignore                      # Git ignore rules
 ├── requirements.txt                # Python package dependencies
 │
 ├── data/
@@ -66,23 +68,21 @@ ai_chatbat_cam_anaylz/
 │   ├── kpi_engine.py               # KPI extraction engine
 │   └── report_generator.py         # Professional PDF report generator
 │
-├── improvements_and_changes_report.txt   # Detailed changelog
-├── setup_commands_explained.txt          # Setup guide with explanations
-└── PROJECT_DOCUMENTATION.md              # This file
+└── PROJECT_DOCUMENTATION.md      # Full technical documentation
 ```
 
 ---
 
 ## 3. File-by-File Documentation
 
-### 3.1 `app.py` — Main Application (721 lines)
+### 3.1 `app.py` — Main Application Route
 
 The central Streamlit application that ties all modules together. It contains:
 
-**Configuration & Setup (Lines 1–87)**
-- Imports all 12 modules
+**Configuration & Setup**
+- Imports all modules, configs, and UI libraries
 - Loads Groq API key from `.env`
-- Sets page config (title, icon, layout)
+- Sets page config and mounts the modular design logic
 - Injects custom CSS for tabs, KPI cards, and section headers
 
 **Dataset Loading (Lines 90–175)**
@@ -440,5 +440,5 @@ The app will open at `http://localhost:8501`.
 
 ---
 
-*Document generated on March 16, 2026*
-*AI Business Intelligence Assistant — Version 2.0*
+*Document Updated: March 2026*
+*Apex Analytics — Version 2.0 Enterprise Data Suite*

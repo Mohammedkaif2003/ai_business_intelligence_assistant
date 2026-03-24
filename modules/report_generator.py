@@ -1,3 +1,9 @@
+try:
+    import kaleido
+except ImportError:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "kaleido"])
+
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, Image,
     PageBreak, HRFlowable, TableStyle
@@ -11,10 +17,9 @@ from reportlab.platypus.frames import Frame
 from reportlab.platypus.doctemplate import PageTemplate
 from datetime import datetime
 import pandas as pd
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import os
+import plotly.express as px
+from io import BytesIO
 
 
 # ═══════════════════════════════════════════════════
@@ -125,9 +130,9 @@ def get_custom_styles():
         fontName="Helvetica-Bold",
         fontSize=20,
         leading=24,
-        textColor=BRAND_PRIMARY,
-        spaceBefore=10,
-        spaceAfter=12,
+        textColor=colors.white,
+        spaceBefore=0,
+        spaceAfter=0,
     ))
 
     styles.add(ParagraphStyle(
@@ -261,6 +266,167 @@ def thin_divider():
 
 
 # ═══════════════════════════════════════════════════
+#  CHART GENERATION
+# ═══════════════════════════════════════════════════
+
+def clean_chart_title(title: str, max_len=60) -> str:
+    """Remove special chars and truncate for chart titles."""
+    title = str(title).replace("&", "and").replace("<", "").replace(">", "")
+    title = title.replace("\n", " ").replace("\r", " ")
+    return title[:max_len] + ("..." if len(title) > max_len else "")
+
+
+def get_chart_columns(df):
+    """Detect the correct x (category) and y (numeric) columns from a result DataFrame."""
+    # Exclude stray index columns
+    clean_cols = [c for c in df.columns if str(c).lower() not in ("index", "level_0")]
+    df = df[clean_cols]
+
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    categorical_cols = df.select_dtypes(exclude="number").columns.tolist()
+    datetime_cols = df.select_dtypes(include=["datetime", "datetime64"]).columns.tolist()
+
+    # Remove datetime from categorical
+    categorical_cols = [c for c in categorical_cols if c not in datetime_cols]
+
+    if datetime_cols and numeric_cols:
+        return datetime_cols[0], numeric_cols[0], "line"
+    elif categorical_cols and numeric_cols:
+        return categorical_cols[0], numeric_cols[0], "bar"
+    elif len(numeric_cols) >= 2:
+        return numeric_cols[0], numeric_cols[1], "scatter"
+    elif len(numeric_cols) == 1:
+        return None, numeric_cols[0], "hist"
+    else:
+        return None, None, None
+
+
+def create_chart_image(df, title="", width=900, height=450):
+    """Create a clean PNG chart image from a result DataFrame for PDF embedding."""
+    # Step 1 — normalise to DataFrame
+    if isinstance(df, pd.Series):
+        df = df.reset_index()
+        if df.shape[1] == 2:
+            df.columns = ["Category", "Value"]
+    elif isinstance(df, pd.DataFrame):
+        if isinstance(df.index, pd.MultiIndex):
+            df = df.reset_index()
+        else:
+            # Only reset index if the index is meaningful (non-default)
+            if not isinstance(df.index, pd.RangeIndex) or df.index.name is not None:
+                df = df.reset_index()
+            # Drop the integer index column if it crept in
+            if "index" in df.columns:
+                df = df.drop(columns=["index"])
+    df = df.copy()
+
+    # Step 2 — drop any column literally named "index" or "level_0"
+    drop_cols = [c for c in df.columns if str(c).lower() in ("index", "level_0")]
+    df = df.drop(columns=drop_cols, errors="ignore")
+
+    # Step 3 — detect chart type from the CLEANED df
+    x_col, y_col, chart_type = get_chart_columns(df)
+    if x_col is None and y_col is None:
+        return None
+
+    # Step 4 — build chart
+    if chart_type == "bar":
+        if len(df) > 20:
+            df = df.nlargest(20, y_col)
+        df = df.sort_values(y_col, ascending=False)
+
+        # Use horizontal bar if category labels are long (avg > 10 chars)
+        avg_label_len = df[x_col].astype(str).str.len().mean()
+        if avg_label_len > 10 or len(df) > 10:
+            # Horizontal bar — easier to read long labels
+            fig = px.bar(
+                df, x=y_col, y=x_col,
+                orientation="h",
+                title=title or f"{y_col} by {x_col}",
+                template="plotly_white",
+                color_discrete_sequence=["#2563EB"]
+            )
+            fig.update_layout(
+                yaxis=dict(categoryorder="total ascending"),
+                xaxis_title=y_col,
+                yaxis_title=x_col,
+                margin=dict(l=160, r=30, t=60, b=40),
+                height=max(400, len(df) * 28),   # auto height based on row count
+                width=width,
+                font=dict(size=11)
+            )
+        else:
+            # Vertical bar for short labels / few items
+            fig = px.bar(
+                df, x=x_col, y=y_col,
+                title=title or f"{y_col} by {x_col}",
+                template="plotly_white",
+                color_discrete_sequence=["#2563EB"]
+            )
+            fig.update_layout(
+                xaxis_tickangle=-35,
+                xaxis_title=x_col,
+                yaxis_title=y_col,
+                margin=dict(l=60, r=30, t=60, b=120),
+                height=height,
+                width=width,
+                font=dict(size=11)
+            )
+
+    elif chart_type == "line":
+        fig = px.line(
+            df, x=x_col, y=y_col,
+            title=title or f"{y_col} over {x_col}",
+            template="plotly_white",
+            color_discrete_sequence=["#2563EB"]
+        )
+        fig.update_layout(
+            xaxis_title=x_col,
+            yaxis_title=y_col,
+            margin=dict(l=60, r=30, t=60, b=60),
+            height=height,
+            width=width
+        )
+
+    elif chart_type == "hist":
+        fig = px.histogram(
+            df, x=y_col,
+            title=title or f"Distribution of {y_col}",
+            template="plotly_white",
+            color_discrete_sequence=["#2563EB"]
+        )
+        fig.update_layout(
+            xaxis_title=y_col,
+            yaxis_title="Count",
+            margin=dict(l=60, r=30, t=60, b=60),
+            height=height,
+            width=width
+        )
+
+    elif chart_type == "scatter":
+        fig = px.scatter(
+            df, x=x_col, y=y_col,
+            title=title or f"{y_col} vs {x_col}",
+            template="plotly_white",
+            color_discrete_sequence=["#2563EB"]
+        )
+        fig.update_layout(
+            xaxis_title=x_col,
+            yaxis_title=y_col,
+            margin=dict(l=60, r=30, t=60, b=60),
+            height=height,
+            width=width
+        )
+
+    else:
+        return None
+
+    # Export to PNG bytes using kaleido
+    img_bytes = fig.to_image(format="png", width=width, height=height, scale=2)
+    return img_bytes
+
+
+# ═══════════════════════════════════════════════════
 #  RECOMMENDATIONS GENERATOR
 # ═══════════════════════════════════════════════════
 
@@ -271,7 +437,10 @@ def generate_recommendations(dataframe):
         return recommendations
 
     if isinstance(dataframe, pd.Series):
-        dataframe = dataframe.reset_index()
+        try:
+            dataframe = dataframe.reset_index()
+        except ValueError:
+            pass
 
     if not isinstance(dataframe, pd.DataFrame) or dataframe.empty:
         return recommendations
@@ -325,12 +494,25 @@ def generate_recommendations(dataframe):
 #  BUILD ONE QUERY SECTION
 # ═══════════════════════════════════════════════════
 
-def _build_query_section(elements, query, summary_text, dataframe, styles, chart_files, query_num=None, ai_response=None):
+def analysis_banner(num, styles):
+    banner = Table([[Paragraph(f"ANALYSIS #{num}", styles["QueryNum"])]],
+                   colWidths=[6.5 * inch])
+    banner.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), BRAND_PRIMARY),
+        ("TOPPADDING", (0,0), (-1,-1), 10),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 10),
+        ("LEFTPADDING", (0,0), (-1,-1), 12),
+    ]))
+    return banner
+
+
+def _build_query_section(elements, query, summary_text, dataframe, styles, query_num=None, ai_response=None):
     """Build PDF elements for a single query analysis."""
 
     # Query number badge
     if query_num:
-        elements.append(Paragraph(f"ANALYSIS #{query_num}", styles["QueryNum"]))
+        elements.append(analysis_banner(query_num, styles))
+        elements.append(Spacer(1, 10))
 
     # User query in a styled box
     safe_query = str(query).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -339,9 +521,11 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, chart
 
     # ── AI Conversational Response ──
     if ai_response and str(ai_response).strip():
-        elements.append(Paragraph("AI RESPONSE", styles["AIResponseLabel"]))
+        elements.append(Paragraph("🤖 AI ANALYST", styles["AIResponseLabel"]))
         clean_response = str(ai_response).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         clean_response = clean_response.replace("**", "")
+        clean_response = clean_response.replace("##", "")
+        clean_response = clean_response.replace("\n\n", "<br/><br/>")
         clean_response = clean_response.replace("\n", "<br/>")
         elements.append(Paragraph(clean_response, styles["AIResponse"]))
         elements.append(Spacer(1, 10))
@@ -353,7 +537,6 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, chart
     # Clean summary text for XML
     clean_summary = str(summary_text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     clean_summary = clean_summary.replace("**", "")
-    # Remove any matplotlib Axes object representations
     if "&lt;Axes:" in clean_summary or "&lt;AxesSubplot" in clean_summary or "Axes:" in str(summary_text):
         clean_summary = "Analysis completed. See the AI Response section above for a detailed explanation."
     elements.append(Paragraph(clean_summary, styles["InsightBox"]))
@@ -362,74 +545,25 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, chart
     # ── Visual Analysis ──
     if isinstance(dataframe, (pd.DataFrame, pd.Series)):
         try:
-            df_chart = dataframe
-            if isinstance(df_chart, pd.Series):
-                df_chart = df_chart.reset_index()
-
-            if isinstance(df_chart.index, pd.MultiIndex):
-                df_chart = df_chart.reset_index()
-            else:
-                df_chart = df_chart.reset_index(drop=False)
-
-            numeric_cols = df_chart.select_dtypes(include="number").columns
-
-            if len(numeric_cols) > 0 and df_chart.shape[1] >= 2:
+            df_chart = dataframe.copy() if isinstance(dataframe, pd.DataFrame) else dataframe.copy()
+            cleaned_title = clean_chart_title(query)
+            img_bytes = create_chart_image(df_chart, title=cleaned_title)
+            
+            if img_bytes:
                 elements.append(Paragraph("VISUAL ANALYSIS", styles["SectionHeader"]))
                 elements.append(thin_divider())
+                
+                img_buffer = BytesIO(img_bytes)
+                rl_image = Image(img_buffer, width=6.5 * inch, height=3.25 * inch)
+                elements.append(rl_image)
+                elements.append(Spacer(1, 8))
 
-                for col in numeric_cols[:2]:
-                    chart_path = f"chart_{query_num or 0}_{col}.png"
-
-                    # Professional chart styling
-                    fig, ax = plt.subplots(figsize=(7, 3.5))
-
-                    x_labels = df_chart.iloc[:, 0].astype(str)
-                    values = df_chart[col]
-
-                    bar_colors = ["#2563EB", "#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE",
-                                  "#F59E0B", "#FBBF24", "#FCD34D", "#FDE68A", "#FEF3C7"]
-
-                    bars = ax.bar(
-                        range(len(x_labels)),
-                        values,
-                        color=[bar_colors[i % len(bar_colors)] for i in range(len(x_labels))],
-                        edgecolor="white",
-                        linewidth=0.5
-                    )
-
-                    ax.set_xticks(range(len(x_labels)))
-                    ax.set_xticklabels(x_labels, rotation=45, ha="right", fontsize=8)
-                    ax.set_ylabel(str(col), fontsize=9, fontweight="bold")
-                    ax.set_title(f"{col} by {df_chart.columns[0]}", fontsize=11, fontweight="bold", pad=12)
-
-                    # Clean grid
-                    ax.spines["top"].set_visible(False)
-                    ax.spines["right"].set_visible(False)
-                    ax.spines["left"].set_color("#E2E8F0")
-                    ax.spines["bottom"].set_color("#E2E8F0")
-                    ax.yaxis.grid(True, alpha=0.3, linestyle="--")
-                    ax.set_axisbelow(True)
-
-                    # Value labels on bars
-                    for bar in bars:
-                        height = bar.get_height()
-                        if height > 0:
-                            label = f"{height:,.0f}" if height > 100 else f"{height:.2f}"
-                            ax.text(
-                                bar.get_x() + bar.get_width() / 2., height,
-                                label, ha="center", va="bottom", fontsize=7, color="#475569"
-                            )
-
-                    plt.tight_layout()
-                    plt.savefig(chart_path, dpi=200, bbox_inches="tight", facecolor="white")
-                    plt.close()
-
-                    chart_files.append(chart_path)
-                    elements.append(Image(chart_path, width=6.5 * inch, height=3 * inch))
-                    elements.append(Spacer(1, 8))
-
-        except Exception:
-            pass
+        except ValueError as e:
+            elements.append(Paragraph(f"Chart could not be rendered: {str(e)}", styles["BodyText2"]))
+        except KeyError as e:
+            elements.append(Paragraph(f"Column not found for chart: {str(e)}", styles["BodyText2"]))
+        except Exception as e:
+            elements.append(Paragraph(f"Chart generation skipped: {str(e)[:100]}", styles["BodyText2"]))
 
     # ── Data Table ──
     if dataframe is not None:
@@ -438,19 +572,37 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, chart
 
         df_table = dataframe
         if isinstance(df_table, pd.Series):
-            df_table = df_table.reset_index()
+            try:
+                df_table = df_table.reset_index()
+            except ValueError:
+                df_table = df_table.reset_index(drop=True).to_frame()
 
         if isinstance(df_table, pd.DataFrame):
-            if isinstance(df_table.index, pd.MultiIndex):
-                df_table = df_table.reset_index()
-            else:
-                df_table = df_table.reset_index().head(15)
+            try:
+                if isinstance(df_table.index, pd.MultiIndex):
+                    df_table = df_table.reset_index()
+                else:
+                    df_table = df_table.reset_index(drop=True)
+                
+                # Cap at 20 rows
+                df_table = df_table.head(20)
+            except ValueError:
+                df_table = df_table.head(20)
 
-            # Build table with truncated values
             header = [str(c)[:20] for c in df_table.columns.tolist()]
             table_data = [header]
+            
             for _, row in df_table.iterrows():
-                table_data.append([str(v)[:25] for v in row.values])
+                row_data = []
+                for v in row.values:
+                    if isinstance(v, (int, float)) and pd.notna(v):
+                        if isinstance(v, float):
+                            row_data.append(f"{v:,.2f}")
+                        else:
+                            row_data.append(f"{v:,}")
+                    else:
+                        row_data.append(str(v)[:25])
+                table_data.append(row_data)
         else:
             table_data = [["Result"], [str(df_table)[:100]]]
 
@@ -471,12 +623,11 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, chart
             ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
             ("TOPPADDING", (0, 0), (-1, 0), 8),
 
-            # Body
+            # Body Settings
             ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
             ("FONTSIZE", (0, 1), (-1, -1), 7.5),
             ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
             ("TOPPADDING", (0, 1), (-1, -1), 5),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 
             # Grid
@@ -486,6 +637,15 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, chart
             ("LINEBEFORE", (0, 1), (0, -1), 0.5, colors.HexColor("#E2E8F0")),
             ("LINEAFTER", (-1, 1), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
         ]
+
+        if isinstance(df_table, pd.DataFrame):
+            for j, col in enumerate(df_table.columns):
+                if pd.api.types.is_numeric_dtype(df_table[col]):
+                    style_commands.append(("ALIGN", (j, 0), (j, -1), "RIGHT"))
+                else:
+                    style_commands.append(("ALIGN", (j, 0), (j, -1), "LEFT"))
+        else:
+            style_commands.append(("ALIGN", (0, 0), (-1, -1), "CENTER"))
 
         # Alternating row colors
         for i in range(1, len(table_data)):
@@ -508,6 +668,35 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, chart
     elements.append(Spacer(1, 10))
 
 
+def build_executive_summary_page(elements, analysis_history, styles):
+    elements.append(PageBreak())
+    elements.append(Paragraph("EXECUTIVE SUMMARY", styles["SectionHeader"]))
+    elements.append(section_divider())
+    elements.append(Spacer(1, 12))
+
+    elements.append(Paragraph(
+        f"This report covers <b>{len(analysis_history)}</b> AI-powered analyses "
+        f"conducted in this session. Key findings are summarised below.",
+        styles["BodyText2"]
+    ))
+    elements.append(Spacer(1, 16))
+
+    for i, entry in enumerate(analysis_history, 1):
+        q = str(entry.get("query", "N/A"))[:100]
+        insight = str(entry.get("insight", "")).replace("**", "")[:200]
+        if insight and "Axes:" not in insight:
+            summary_text = insight[:200] + ("..." if len(insight) > 200 else "")
+        else:
+            summary_text = "Analysis completed successfully."
+
+        elements.append(Paragraph(
+            f'<font color="{BRAND_PRIMARY.hexval()}"><b>#{i}</b></font>  {q}',
+            styles["SubSection"]
+        ))
+        elements.append(Paragraph(summary_text, styles["BodyText2"]))
+        elements.append(thin_divider())
+
+
 # ═══════════════════════════════════════════════════
 #  MAIN PDF GENERATOR
 # ═══════════════════════════════════════════════════
@@ -527,7 +716,6 @@ def generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, ana
 
     elements = []
     styles = get_custom_styles()
-    chart_files = []
     timestamp = datetime.now().strftime("%B %d, %Y  •  %H:%M")
 
     # ══════════════════════════════════════════════
@@ -586,7 +774,8 @@ def generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, ana
     elements.append(meta_table)
 
     # ── Table of Contents ──
-    if analysis_history and len(analysis_history) > 1:
+    # ── Table of Contents ──
+    if analysis_history and len(analysis_history) > 0:
         elements.append(Spacer(1, 30))
         elements.append(Paragraph("CONTENTS", styles["SectionHeader"]))
         elements.append(section_divider())
@@ -613,10 +802,13 @@ def generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, ana
                 summary_text=entry.get("insight", "N/A"),
                 dataframe=entry.get("result"),
                 styles=styles,
-                chart_files=chart_files,
                 query_num=i,
                 ai_response=entry.get("ai_response", "")
             )
+
+        # Build Executive Summary Page
+        if len(analysis_history) > 1:
+            build_executive_summary_page(elements, analysis_history, styles)
 
     elif query is not None:
 
@@ -627,8 +819,7 @@ def generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, ana
             query=query,
             summary_text=summary_text,
             dataframe=dataframe,
-            styles=styles,
-            chart_files=chart_files
+            styles=styles
         )
 
     else:
@@ -666,10 +857,5 @@ def generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, ana
         onFirstPage=add_first_page_decoration,
         onLaterPages=add_page_decoration
     )
-
-    # Cleanup temp charts
-    for file in chart_files:
-        if os.path.exists(file):
-            os.remove(file)
 
     return file_path

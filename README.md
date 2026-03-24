@@ -1,6 +1,7 @@
-# 📊 AI Business Intelligence Assistant
+# ⚡ Apex Analytics — Enterprise Data Suite
 
-An AI-powered business intelligence tool that lets you **upload datasets and ask questions in plain English**. Get instant data analysis, interactive charts, automated KPIs, revenue forecasting, and professional PDF reports — all powered by **Groq’s LLaMA 3.3 70B** model.
+An enterprise-grade, AI-powered business intelligence suite that acts as an autonomous Data Analyst. It lets you **upload datasets and ask questions in plain English**. Get instant data analysis, interactive charts, automated KPIs, revenue forecasting, and professional PDF reports — all powered by **Groq’s advanced LLaMA** models.
+
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.30+-FF4B4B?logo=streamlit&logoColor=white)
@@ -81,7 +82,10 @@ The app opens at **http://localhost:8501** 🎉
 ## 📁 Project Structure
 
 ```
-├── app.py                        # Main Streamlit application
+├── app.py                        # Main Streamlit application route
+├── config.py                     # App constants, layout, & branding config
+├── styles.py                     # Tailwind frontend styling injector
+├── ui_components.py              # Reusable KPI and section header blocks
 ├── requirements.txt              # Python dependencies
 ├── .env                          # API key (not committed)
 │
@@ -105,8 +109,7 @@ The app opens at **http://localhost:8501** 🎉
 │   ├── groq_ai.py                # Follow-up question suggestions
 │   └── report_generator.py       # Professional PDF report generator
 │
-├── PROJECT_DOCUMENTATION.md      # Full technical documentation
-└── INITIAL_VS_ENHANCED.md        # Changelog: initial vs enhanced version
+└── PROJECT_DOCUMENTATION.md      # Full technical documentation
 ```
 
 ---
@@ -152,8 +155,8 @@ User uploads CSV / selects pre-loaded dataset
 | `pandas` | Data manipulation & analysis |
 | `numpy` | Numerical computing |
 | `plotly` | Interactive visualizations |
-| `matplotlib` | Chart generation for PDFs |
-| `groq` | Groq API client (LLaMA 3.3 70B) |
+| `kaleido` | High-quality Plotly to PNG exporting for PDFs |
+| `groq` | Groq API client (LLaMA Models) |
 | `reportlab` | Professional PDF generation |
 | `python-dotenv` | Environment variable management |
 | `scikit-learn` | Machine learning utilities |
@@ -196,7 +199,6 @@ The app comes with 3 pre-loaded datasets for testing:
 ## 📄 Documentation
 
 - **[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)** — Full technical docs: every module, function, data flow, security model
-- **[INITIAL_VS_ENHANCED.md](INITIAL_VS_ENHANCED.md)** — Detailed changelog comparing the initial repo to the enhanced version
 
 ---
 
@@ -208,6 +210,7 @@ The app comes with 3 pre-loaded datasets for testing:
 4. Push to the branch (`git push origin feature/my-feature`)
 5. Open a Pull Request
 
+---
 
 
 <div align="center">
