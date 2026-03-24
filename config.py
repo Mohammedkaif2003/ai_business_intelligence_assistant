@@ -1,8 +1,8 @@
 # ── All app-wide constants ── edit this file to change settings
 
-APP_TITLE = "AI Business Intelligence Assistant"
+APP_TITLE = "Apex Analytics"
 APP_VERSION = "2.0"
-APP_ICON = "📊"
+APP_ICON = "⚡"
 
 CHART_TEMPLATE = "plotly_white"
 CHART_HEIGHT = 420

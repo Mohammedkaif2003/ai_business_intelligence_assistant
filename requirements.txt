@@ -8,6 +8,6 @@ scikit-learn
 statsmodels
 joblib
 groq
-google-generativeai
 python-dotenv
 reportlab
+kaleido

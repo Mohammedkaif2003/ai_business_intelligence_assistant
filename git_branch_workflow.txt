@@ -1,0 +1,24 @@
+How to Create a New Branch and Push to GitHub
+
+When working on a project, it's best practice to separate new features or major changes into their own branches instead of pushing directly to the main or master branch. Here is the exact process used to create the new "Apex Analytics" feature branch and push it to your repository:
+
+1. Stage Your Changes
+First, we told Git to track all the file modifications, deletions, and additions you made. You successfully ran this step earlier:
+    Command: git add -A
+    (This adds all changes in the directory to the staging area)
+
+2. Create and Switch to a New Branch
+Instead of committing directly, we branched off from your current state. The `-b` flag tells Git to create the branch and immediately switch to it.
+    Command: git checkout -b feature/apex-analytics
+    (If using newer versions of Git, you can also use: git switch -c feature/apex-analytics)
+
+3. Commit Your Code
+Once the files were staged and we were on the safe new branch, we committed the changes with a structured, descriptive message explaining exactly what was contained in the update.
+    Command: git commit -m "Feat: Apex Analytics redesign, modular architecture, and enhanced PDF reporting"
+
+4. Push the Branch to GitHub
+Because this branch only existed locally on your computer, we had to "push" it up to GitHub. We told Git to push it to the remote repository (called "origin") and to track this specific branch name.
+    Command: git push origin feature/apex-analytics
+    (Sometimes written as: git push -u origin feature/apex-analytics to set the upstream link permanently)
+
+After this command completes, your new branch becomes immediately visible on GitHub under the Branches tab, ready to be reviewed or merged!
