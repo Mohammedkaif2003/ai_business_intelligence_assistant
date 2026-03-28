@@ -48,19 +48,18 @@ inject_styles(st)
 # ---------- SIDEBAR & DATASET LOADING ----------
 
 st.sidebar.markdown(f"""
-<div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); padding: 24px 20px; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); border: 1px solid rgba(255,255,255,0.05); position: relative; overflow: hidden;">
-    <!-- Decorative glow -->
-    <div style="position: absolute; top: -50%; right: -20%; width: 120px; height: 120px; background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);"></div>
-    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
-        <div style="background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);">
+<div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); padding: 24px 20px; border-radius: 16px; margin-bottom: 24px; backdrop-filter: blur(10px); position: relative; overflow: hidden;">
+    <div style="position: absolute; top: -50%; right: -20%; width: 120px; height: 120px; background: radial-gradient(circle, #4F46E5 0%, transparent 70%); opacity: 0.4;"></div>
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px; position: relative; z-index: 1;">
+        <div style="background: linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 4px 10px rgba(79, 70, 229, 0.3);">
             {APP_ICON}
         </div>
-        <div style="font-size: 22px; font-weight: 800; background: linear-gradient(to right, #F8FAFC, #94A3B8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -0.5px;">
+        <div style="font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">
             {APP_TITLE}
         </div>
     </div>
-    <div style="color: #64748B; font-size: 12px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; margin-left: 48px;">
-        Enterprise Data Suite
+    <div style="color: #94A3B8; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-left: 48px; position: relative; z-index: 1;">
+        AI Intelligence Suite
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -143,12 +142,12 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 # ---------- TAB 1: DATA OVERVIEW ----------
 with tab1:
-    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
+    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     st.subheader("Dataset Preview")
     st.dataframe(df.head(20), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
+    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     st.subheader("Column Details")
     col_info = pd.DataFrame({
         "Column": df.columns,
@@ -161,12 +160,12 @@ with tab1:
     st.dataframe(col_info, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
+    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     st.subheader("Statistics")
     st.dataframe(df.describe(), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
+    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     st.subheader("🔎 Automatic Dataset Insights")
     auto_insights = generate_auto_insights(df)
     for insight in auto_insights:
@@ -216,7 +215,7 @@ with tab2:
             # Chart Data
             chart_data = entry.get("chart_data")
             if chart_data is not None:
-                st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
+                st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
                 st.markdown("**📋 Data Table**")
                 st.dataframe(chart_data, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -233,7 +232,7 @@ with tab2:
             else:
                 result = entry.get("result")
                 if isinstance(result, dict):
-                    st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
+                    st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
                     for key, value in result.items():
                         try:
                             if "<Axes:" in str(value) or "<AxesSubplot" in str(value):
@@ -250,7 +249,7 @@ with tab2:
                     st.markdown('</div>', unsafe_allow_html=True)
                 elif not entry.get("ai_response"):
                     if str(result) != "None":
-                        st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
+                        st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
                         st.write(str(result))
                         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -274,7 +273,13 @@ with tab2:
 
         with st.spinner("🔍 AI analyzing your dataset..."):
             code = generate_analysis_code(api_key, query, df, schema)
-            result = execute_code(code, df)
+            execution_output = execute_code(code, df)
+            
+        ai_charts = []
+        if isinstance(execution_output, tuple):
+            result, ai_charts = execution_output
+        else:
+            result = execution_output
 
         chart_data = None
         insight = ""
@@ -316,12 +321,16 @@ with tab2:
             st.code(code, language="python")
 
         if chart_data is not None:
-            st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
+            st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
             st.markdown("**📋 Data Table**")
             st.dataframe(chart_data, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
             
-            chart_figs = auto_visualize(chart_data)
+            if ai_charts:
+                chart_figs = ai_charts
+            else:
+                chart_figs = auto_visualize(chart_data)
+            
             if chart_figs:
                 if len(chart_figs) == 2:
                     c1, c2 = st.columns(2)
@@ -342,7 +351,7 @@ with tab2:
         else:
             if isinstance(result, dict):
                 has_displayable = False
-                st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
+                st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
                 for key, value in result.items():
                     try:
                         if "<Axes:" in str(value) or "<AxesSubplot" in str(value):
@@ -361,7 +370,7 @@ with tab2:
                 if not has_displayable and not ai_response:
                     st.info("The AI analyzed the data but the result format couldn't be displayed as a table.")
             elif not ai_response and str(result) != "None":
-                st.markdown('<div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-4">', unsafe_allow_html=True)
+                st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
                 st.write(str(result))
                 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -396,6 +405,8 @@ with tab2:
             "code": code,
             "insight": report_insight,
             "ai_response": ai_response,
+            "charts": chart_figs,
+            "summary": summary_list,
         })
 
         st.session_state.chat_history.append({
@@ -414,7 +425,7 @@ with tab2:
 # ---------- TAB 3: FORECASTING ----------
 with tab3:
     render_section_header("🔮 Revenue / Sales Forecasting", "Predict future trends based on historical data patterns.")
-    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
+    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     
     forecast_periods = st.slider("Forecast periods (months):", min_value=1, max_value=12, value=3)
 
@@ -457,7 +468,7 @@ with tab3:
 
 # ---------- TAB 4: REPORTS ----------
 with tab4:
-    st.markdown('<div class="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">', unsafe_allow_html=True)
+    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     st.markdown("<h3 style='color: #1E293B; margin-bottom: 0px;'>📑 Executive Report Generator</h3>", unsafe_allow_html=True)
     st.markdown("<p style='color: #64748B; font-size: 14px;'>Compile your entire AI analysis session into a branded, professional PDF report.</p>", unsafe_allow_html=True)
     st.markdown("<hr style='margin-top: 5px; margin-bottom: 25px;'>", unsafe_allow_html=True)

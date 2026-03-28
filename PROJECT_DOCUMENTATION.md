@@ -1,10 +1,10 @@
-# 📊 AI Business Intelligence Assistant — Project Documentation
+# ⚡ Apex Analytics — Enterprise Data Suite Documentation
 
 ---
 
 ## 1. Project Overview
 
-The **AI Business Intelligence Assistant** is a Streamlit-based web application that allows users to upload business datasets (CSV files) and interact with them using natural language queries powered by **Groq's LLaMA 3.3 70B AI model**.
+**Apex Analytics** is an enterprise-grade, Streamlit-based Business Intelligence application. It allows users to upload business datasets (CSV files) and interact with them using natural language queries powered by **Groq's advanced LLaMA models**, functioning natively as a Senior Data Analyst.
 
 The application transforms raw data into actionable business intelligence by providing:
 
@@ -18,19 +18,19 @@ The application transforms raw data into actionable business intelligence by pro
 
 | Component        | Technology                        |
 |------------------|-----------------------------------|
-| Frontend / UI    | Streamlit (Python)                |
-| AI Engine        | Groq API (LLaMA 3.3 70B)         |
+| Frontend / UI    | Streamlit, Tailwind CSS (Injected)|
+| AI Engine        | Groq API (LLaMA Models)           |
 | Data Processing  | Pandas, NumPy                     |
 | Visualizations   | Plotly Express, Plotly Graph Objects |
+| Static Charting  | Kaleido (Plotly → PNG Export)    |
 | PDF Generation   | ReportLab                         |
-| Charts (PDF)     | Matplotlib                        |
-| Environment      | Python 3.10.1, python-dotenv      |
+| Environment      | Python 3.10+, python-dotenv       |
 
 ### Runtime Requirements
 
 ```
 streamlit, pandas, numpy, matplotlib, seaborn, plotly
-scikit-learn, statsmodels, joblib, groq, python-dotenv, reportlab
+scikit-learn, statsmodels, joblib, groq, python-dotenv, reportlab, kaleido
 ```
 
 ---
@@ -40,49 +40,56 @@ scikit-learn, statsmodels, joblib, groq, python-dotenv, reportlab
 ```
 ai_chatbat_cam_anaylz/
 │
-├── app.py                          # Main Streamlit application (721 lines)
-├── .env                            # Environment variables (GROQ_API_KEY)
-├── .gitignore                      # Git ignore rules
-├── requirements.txt                # Python package dependencies
+├── .env                              # Stores API keys (GROQ_API_KEY, GOOGLE_API_KEY)
+├── .gitignore                        # Files to ignore in version control
+├── app.py                            # Main Streamlit application
+├── config.py                         # App constants, layout, & branding config
+├── requirements.txt                  # Python package dependencies
+├── styles.py                         # Custom CSS injections for the Streamlit UI
+├── ui_components.py                  # Reusable UI elements (cards, headers, chat bubbles)
+├── calc_report.py                    # Legacy/Utility helper script
+├── README.md                         # Main generic project read-me
+├── PROJECT_DOCUMENTATION.md          # In-depth technical architecture documentation
+├── INITIAL_VS_ENHANCED.md            # Document tracking UI/UX enhancement history
 │
-├── data/
+├── data/                             # Directory for local CSV datasets
 │   └── raw/
 │       ├── sales_data.csv          # Sales dataset (464 KB)
 │       ├── hr_data.csv             # HR/Employee dataset (35 KB)
 │       └── finance_data.csv        # Finance dataset (2.7 KB)
 │
-├── modules/
-│   ├── __init__.py                 # Package initializer
-│   ├── ai_code_generator.py        # AI-powered code generation via Groq
-│   ├── auto_insights.py            # Automated business insight detection
-│   ├── auto_visualizer.py          # Automatic chart generation (bar, line, pie)
-│   ├── code_executor.py            # Sandboxed Python code execution
-│   ├── data_loader.py              # Dataset loading & column normalization
-│   ├── dataset_analyzer.py         # Dataset schema analysis
-│   ├── executive_summary.py        # Executive summary bullet points
-│   ├── forecasting.py              # Revenue/sales forecasting engine
-│   ├── groq_ai.py                  # Groq API integration for suggestions
-│   ├── insight_engine.py           # Business insight generation
-│   ├── kpi_engine.py               # KPI extraction engine
-│   └── report_generator.py         # Professional PDF report generator
+├── modules/                          # CORE BACKEND: Logic & Intelligence Engines
+│   ├── __init__.py                   # Package initializer
+│   ├── ai_code_generator.py          # AI-powered code generation via Groq
+│   ├── ai_conversation.py            # Manages conversational logic & system prompts for AI answers
+│   ├── auto_insights.py              # Automated business insight detection
+│   ├── auto_visualizer.py            # Automatic chart generation (bar, line, pie)
+│   ├── code_executor.py              # Sandboxed Python code execution
+│   ├── data_loader.py                # Loading & column normalization
+│   ├── dataset_analyzer.py           # Dataset schema analysis
+│   ├── executive_summary.py          # Executive summary bullet points
+│   ├── forecasting.py                # Revenue/sales forecasting engine
+│   ├── groq_ai.py                    # Groq API integration for suggestions
+│   ├── insight_engine.py             # Business insight generation
+│   ├── kpi_engine.py                 # KPI extraction engine
+│   └── report_generator.py           # Professional PDF report generator
 │
 ├── improvements_and_changes_report.txt   # Detailed changelog
-├── setup_commands_explained.txt          # Setup guide with explanations
-└── PROJECT_DOCUMENTATION.md              # This file
+└── setup_commands_explained.txt          # Setup guide with explanations
 ```
 
 ---
 
 ## 3. File-by-File Documentation
 
-### 3.1 `app.py` — Main Application (721 lines)
+### 3.1 `app.py` — Main Application Route
 
 The central Streamlit application that ties all modules together. It contains:
 
-**Configuration & Setup (Lines 1–87)**
-- Imports all 12 modules
+**Configuration & Setup**
+- Imports all modules, configs, and UI libraries
 - Loads Groq API key from `.env`
-- Sets page config (title, icon, layout)
+- Sets page config and mounts the modular design logic
 - Injects custom CSS for tabs, KPI cards, and section headers
 
 **Dataset Loading (Lines 90–175)**
@@ -411,7 +418,7 @@ The app uses **Groq's LLaMA 3.3 70B Versatile** model:
 | Model         | `llama-3.3-70b-versatile`  |
 | Temperature   | 0.1 (code gen) / 0.3 (suggestions) |
 | API Key       | Stored in `.env` as `GROQ_API_KEY` |
-| Fallback      | `st.secrets["GROQ_API_KEY"]` for Streamlit Cloud |
+| Fallback      | `st.secrets.get("GROQ_API_KEY", None)` for Streamlit Cloud |
 
 ---
 
@@ -440,5 +447,5 @@ The app will open at `http://localhost:8501`.
 
 ---
 
-*Document generated on March 16, 2026*
-*AI Business Intelligence Assistant — Version 2.0*
+*Document Updated: March 2026*
+*Apex Analytics — Version 2.0 Enterprise Data Suite*

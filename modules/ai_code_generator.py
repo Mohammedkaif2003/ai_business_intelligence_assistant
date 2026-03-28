@@ -1,7 +1,7 @@
 import streamlit as st
 from groq import Groq
 import os
-api_key = os.getenv("GROQ_API_KEY") or st.secrets["GROQ_API_KEY"]
+api_key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY", None)
 @st.cache_data(show_spinner=False)
 def generate_analysis_code(api_key, query, df, dataset_context):
 
@@ -28,22 +28,25 @@ USER QUESTION
 
 RULES
 -----
-1. Write ONLY valid Python pandas code.
-2. Use dataframe name: df
-3. Store the final output in a variable named result
-4. Do NOT print anything
-5. Do NOT import libraries
-6. Do NOT explain anything
-7. Only use the columns listed above
-8. Ensure the code always returns a pandas result if possible
-9. IMPORTANT: If using nlargest() on a DataFrame, you MUST specify the 'columns' argument (e.g., nlargest(n=3, columns='Revenue')). If using it on a Series, just pass the n value.
-10. If the question asks for predictions or forecasts over time, use the np.polyfit function since we have numpy imported as np, rather than complex ML libraries.
-11. NEVER use .hist(), .plot(), .show(), plt, or any matplotlib/seaborn visualization code. You do NOT have access to matplotlib. If asked to explain or describe charts/graphs, use .describe(), .value_counts(), or .agg() to provide the underlying data instead.
-12. If the question is vague or asks to "explain" something, provide a statistical summary using .describe() or group-level aggregations rather than trying to create visual output.
+1. Write ONLY valid Python code using pandas, numpy, and plotly.express (px).
+2. Use dataframe name: df. Do NOT import pandas or numpy again.
+3. Store the final tabular/numeric output in a variable named `result`.
+4. If a visual graph (chart) is suitable or requested, use `px` to generate Plotly figures.
+5. Create a Python list named `charts` and append your Plotly figures to it (e.g., `charts = [px.bar(...)]`).
+6. Apply `template="plotly_white"` to all your charts for premium design. Keep charts professional and clean.
+7. Do NOT use plt, matplotlib, or seaborn. ONLY use plotly.express (px).
+8. Do NOT print anything. Do NOT write conversational text outside of comments in the code block.
+9. Wrap ALL your Python code inside a single ```python ... ``` block.
+10. you can talk calm and cool when user says hi or hello or any other greeting.
 
 EXAMPLE FORMAT
 --------------
-result = df.groupby("column").sum()
+```python
+result = df.groupby("Category")['Revenue'].sum().reset_index()
+fig = px.bar(result, x='Category', y='Revenue', title='Revenue by Category', template='plotly_white')
+fig.update_traces(marker_color='#4F46E5')
+charts = [fig]
+```
 """
 
     try:
@@ -54,10 +57,16 @@ result = df.groupby("column").sum()
             temperature=0.1
         )
 
+        import re
         code = response.choices[0].message.content
 
-        # Remove markdown blocks
-        code = code.replace("```python", "").replace("```", "").strip()
+        # Extract code strictly from markdown block if present
+        match = re.search(r"```python\s*(.*?)\s*```", code, re.DOTALL)
+        if match:
+            code = match.group(1)
+        else:
+            # Fallback string cleaning
+            code = code.replace("```python", "").replace("```", "").strip()
 
         # Remove explanations and imports if AI adds them
         lines = code.split("\n")
@@ -65,20 +74,16 @@ result = df.groupby("column").sum()
         for line in lines:
             stripped_line = line.strip()
             
-            # Skip conversational text
-            if stripped_line.lower().startswith(("here", "sure", "this code", "hope this")):
-                continue
-                
-            # Skip import lines to prevent triggering the security block
             if stripped_line.startswith("import ") or stripped_line.startswith("from "):
-                continue
+                if "plotly" not in stripped_line:
+                    continue
                 
             code_lines.append(line)
 
         code = "\n".join(code_lines)
 
         # Safety fallback
-        if "result" not in code:
+        if "result =" not in code and "charts =" not in code:
             code = f"result = df.head()"
 
         return code

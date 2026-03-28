@@ -20,6 +20,7 @@ import pandas as pd
 import os
 import plotly.express as px
 from io import BytesIO
+import re
 
 
 # ═══════════════════════════════════════════════════
@@ -506,7 +507,7 @@ def analysis_banner(num, styles):
     return banner
 
 
-def _build_query_section(elements, query, summary_text, dataframe, styles, query_num=None, ai_response=None):
+def _build_query_section(elements, query, summary_text, dataframe, styles, query_num=None, ai_response=None, charts=None, code=None, summary_list=None):
     """Build PDF elements for a single query analysis."""
 
     # Query number badge
@@ -523,7 +524,7 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, query
     if ai_response and str(ai_response).strip():
         elements.append(Paragraph("🤖 AI ANALYST", styles["AIResponseLabel"]))
         clean_response = str(ai_response).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        clean_response = clean_response.replace("**", "")
+        clean_response = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', clean_response)
         clean_response = clean_response.replace("##", "")
         clean_response = clean_response.replace("\n\n", "<br/><br/>")
         clean_response = clean_response.replace("\n", "<br/>")
@@ -536,21 +537,35 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, query
 
     # Clean summary text for XML
     clean_summary = str(summary_text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    clean_summary = clean_summary.replace("**", "")
+    clean_summary = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', clean_summary)
     if "&lt;Axes:" in clean_summary or "&lt;AxesSubplot" in clean_summary or "Axes:" in str(summary_text):
         clean_summary = "Analysis completed. See the AI Response section above for a detailed explanation."
     elements.append(Paragraph(clean_summary, styles["InsightBox"]))
     elements.append(Spacer(1, 12))
 
     # ── Visual Analysis ──
-    if isinstance(dataframe, (pd.DataFrame, pd.Series)):
+    if charts and isinstance(charts, list) and len(charts) > 0:
+        elements.append(Paragraph("VISUAL ANALYSIS", styles["SectionHeader"]))
+        elements.append(thin_divider())
+        
+        for fig in charts:
+            try:
+                # Use kaleido to export exactly what the AI generated with the same color scheme
+                img_bytes = fig.to_image(format="png", width=900, height=450, scale=2)
+                img_buffer = BytesIO(img_bytes)
+                rl_image = Image(img_buffer, width=6.5 * inch, height=3.25 * inch)
+                elements.append(rl_image)
+                elements.append(Spacer(1, 12))
+            except Exception as e:
+                elements.append(Paragraph(f"AI Chart could not be rendered in PDF: {str(e)[:100]}", styles["BodyText2"]))
+    elif isinstance(dataframe, (pd.DataFrame, pd.Series)):
         try:
             df_chart = dataframe.copy() if isinstance(dataframe, pd.DataFrame) else dataframe.copy()
             cleaned_title = clean_chart_title(query)
             img_bytes = create_chart_image(df_chart, title=cleaned_title)
             
             if img_bytes:
-                elements.append(Paragraph("VISUAL ANALYSIS", styles["SectionHeader"]))
+                elements.append(Paragraph("VISUAL ANALYSIS (AUTO-GENERATED FALLBACK)", styles["SectionHeader"]))
                 elements.append(thin_divider())
                 
                 img_buffer = BytesIO(img_bytes)
@@ -666,6 +681,18 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, query
         elements.append(Paragraph(bullet, styles["RecItem"]))
 
     elements.append(Spacer(1, 10))
+
+
+    # ── KEY DATA FINDINGS (EXECUTIVE SUMMARY) ──
+    if summary_list and isinstance(summary_list, list) and len(summary_list) > 0:
+        elements.append(Paragraph("KEY DATA FINDINGS", styles["SectionHeader"]))
+        elements.append(thin_divider())
+        for sum_item in summary_list:
+            clean_item = str(sum_item).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            clean_item = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', clean_item)
+            bullet = f'<font color="{BRAND_PRIMARY.hexval()}">\u25B6</font>  {clean_item}'
+            elements.append(Paragraph(bullet, styles["RecItem"]))
+        elements.append(Spacer(1, 10))
 
 
 def build_executive_summary_page(elements, analysis_history, styles):
@@ -803,7 +830,10 @@ def generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, ana
                 dataframe=entry.get("result"),
                 styles=styles,
                 query_num=i,
-                ai_response=entry.get("ai_response", "")
+                ai_response=entry.get("ai_response", ""),
+                charts=entry.get("charts", []),
+                code=entry.get("code", ""),
+                summary_list=entry.get("summary", [])
             )
 
         # Build Executive Summary Page
@@ -819,7 +849,10 @@ def generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, ana
             query=query,
             summary_text=summary_text,
             dataframe=dataframe,
-            styles=styles
+            styles=styles,
+            charts=charts,
+            code="",
+            summary_list=[]
         )
 
     else:
