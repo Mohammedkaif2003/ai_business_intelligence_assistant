@@ -75,8 +75,7 @@ charts = [fig]
             stripped_line = line.strip()
             
             if stripped_line.startswith("import ") or stripped_line.startswith("from "):
-                if "plotly" not in stripped_line:
-                    continue
+                continue
                 
             code_lines.append(line)
 
