@@ -5,6 +5,7 @@ from modules.query_utils import (
     detect_simple_query,
     is_memory_query,
     extract_follow_up_questions,
+    generate_follow_up_fallbacks,
     get_irrelevant_query_message,
 )
 
@@ -45,6 +46,19 @@ def test_extract_follow_up_questions_filters_non_questions():
     raw = "Here are some follow-up questions:\n1. What is total revenue by region?\n- Compare revenue by month?\nThis is not a question"
     parsed = extract_follow_up_questions(raw)
     assert parsed == ["What is total revenue by region?", "Compare revenue by month?"]
+
+
+def test_generate_follow_up_fallbacks_returns_question_list():
+    df = _sample_df()
+    schema = {
+        "numeric_columns": ["Revenue"],
+        "categorical_columns": ["Region"],
+        "datetime_columns": ["Date"],
+    }
+    questions = generate_follow_up_fallbacks("show revenue", df, schema)
+    assert len(questions) >= 4
+    assert all(question.endswith("?") for question in questions)
+    assert any("Revenue" in question for question in questions)
 
 
 def test_get_irrelevant_query_message_mentions_columns():

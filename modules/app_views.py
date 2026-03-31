@@ -6,6 +6,7 @@ import streamlit as st
 
 from modules.text_utils import clean_text, structure_response
 from modules.query_utils import extract_follow_up_questions
+from modules.app_state import ensure_analysis_state
 from ui_components import (
     render_assistant_bubble,
     render_chart_card,
@@ -17,12 +18,7 @@ from ui_components import (
 
 
 def init_analysis_state():
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "analysis_history" not in st.session_state:
-        st.session_state.analysis_history = []
+    ensure_analysis_state()
 
 
 def _generate_quick_prompts(df: pd.DataFrame, schema: dict | None = None) -> list[str]:
@@ -88,15 +84,21 @@ def render_chart_collection(charts):
     if not charts:
         return
 
-    if len(charts) == 2:
-        c1, c2 = st.columns(2)
-        with c1:
-            render_chart_card(charts[0], c1)
-        with c2:
-            render_chart_card(charts[1], c2)
+    if len(charts) > 1:
+        chart_titles = []
+        for idx, chart in enumerate(charts):
+            if isinstance(chart, dict):
+                chart_titles.append(chart.get("title") or f"Chart Option {idx + 1}")
+            else:
+                chart_titles.append(f"Chart Option {idx + 1}")
+        selected_title = st.selectbox("Chart view", chart_titles, key=f"chart_selector_{len(charts)}")
+        selected_index = chart_titles.index(selected_title)
+        render_chart_card(charts[selected_index], st, key_prefix=f"chart_selected_{selected_index}")
+        with st.expander("Show all chart options", expanded=False):
+            for idx, chart in enumerate(charts):
+                render_chart_card(chart, st, key_prefix=f"chart_all_{idx}")
     else:
-        for fig in charts:
-            render_chart_card(fig, st)
+        render_chart_card(charts[0], st, key_prefix="chart_single")
 
 
 def render_dataframe_result(dataframe: pd.DataFrame, key_prefix: str, title: str = "Data Table", max_rows: int = 500):

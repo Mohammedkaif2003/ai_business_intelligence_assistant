@@ -21,6 +21,11 @@ import plotly.express as px
 from io import BytesIO
 import re
 
+from modules.app_logging import get_logger
+
+
+logger = get_logger("report_generator")
+
 
 # ═══════════════════════════════════════════════════
 #  BRAND COLORS
@@ -549,8 +554,11 @@ def _build_query_section(elements, query, summary_text, dataframe, styles, query
         
         for fig in charts:
             try:
+                chart_figure = fig.get("figure") if isinstance(fig, dict) else fig
+                if chart_figure is None:
+                    continue
                 # Use kaleido to export exactly what the AI generated with the same color scheme
-                img_bytes = fig.to_image(format="png", width=900, height=450, scale=2)
+                img_bytes = chart_figure.to_image(format="png", width=900, height=450, scale=2)
                 img_buffer = BytesIO(img_bytes)
                 rl_image = Image(img_buffer, width=6.5 * inch, height=3.25 * inch)
                 elements.append(rl_image)
@@ -730,6 +738,7 @@ def build_executive_summary_page(elements, analysis_history, styles):
 def generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, analysis_history=None):
 
     file_path = "AI_Executive_Report.pdf"
+    logger.info("Generating PDF report with analysis_history=%s query_present=%s", bool(analysis_history), query is not None)
 
     doc = SimpleDocTemplate(
         file_path,
@@ -889,5 +898,7 @@ def generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, ana
         onFirstPage=add_first_page_decoration,
         onLaterPages=add_page_decoration
     )
+
+    logger.info("PDF report generated at %s", os.path.abspath(file_path))
 
     return file_path

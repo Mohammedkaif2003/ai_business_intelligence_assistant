@@ -4,6 +4,9 @@ from html import unescape
 
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
+
+from modules.auto_visualizer import build_graph_follow_up_questions, chart_download_bytes
 
 
 def clean_text(text: str) -> str:
@@ -139,7 +142,30 @@ def render_section_header(title, subtitle=""):
         st.caption(subtitle)
 
 
-def render_chart_card(fig, st_instance):
+def _normalize_chart_payload(chart):
+    if isinstance(chart, dict) and chart.get("figure") is not None:
+        return chart
+    if isinstance(chart, go.Figure):
+        return {
+            "figure": chart,
+            "title": chart.layout.title.text if chart.layout.title else "Chart",
+            "rationale": "",
+            "summary": [],
+            "warnings": [],
+            "data": None,
+            "x_col": "",
+            "y_cols": [],
+            "chart_type": "chart",
+        }
+    return None
+
+
+def render_chart_card(chart, st_instance, key_prefix: str | None = None):
+    payload = _normalize_chart_payload(chart)
+    if not payload:
+        return
+
+    fig = payload["figure"]
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor="rgba(15, 23, 42, 0)",
@@ -162,6 +188,55 @@ def render_chart_card(fig, st_instance):
         ),
     )
     st_instance.plotly_chart(fig, use_container_width=True)
+
+    rationale = clean_text(payload.get("rationale", ""))
+    if rationale:
+        st_instance.caption(f"Why this chart: {rationale}")
+
+    for warning in payload.get("warnings", []):
+        st_instance.caption(clean_text(warning))
+
+    summary = payload.get("summary", []) or []
+    if summary:
+        st_instance.markdown("**Chart Summary**")
+        for item in summary:
+            st_instance.write(f"- {clean_text(item)}")
+
+    data = payload.get("data")
+    download_key = key_prefix or re.sub(r"[^a-zA-Z0-9_]+", "_", payload.get("title", "chart"))
+    if isinstance(data, pd.DataFrame) and not data.empty:
+        left, right = st_instance.columns(2)
+        with left:
+            st.download_button(
+                "Download Plot Data",
+                data=chart_download_bytes(payload),
+                file_name=f"{download_key}_plot_data.csv",
+                mime="text/csv",
+                key=f"{download_key}_csv",
+                use_container_width=True,
+            )
+        with right:
+            try:
+                image_bytes = fig.to_image(format="png", width=1200, height=700, scale=2)
+                st.download_button(
+                    "Download Chart PNG",
+                    data=image_bytes,
+                    file_name=f"{download_key}.png",
+                    mime="image/png",
+                    key=f"{download_key}_png",
+                    use_container_width=True,
+                )
+            except Exception:
+                st.caption("PNG export is unavailable in this environment.")
+
+    follow_ups = build_graph_follow_up_questions(payload)
+    if follow_ups:
+        st_instance.markdown("**Graph Follow-Ups**")
+        for idx, question in enumerate(follow_ups):
+            clean_q = clean_text(question)
+            if st_instance.button(clean_q, key=f"{download_key}_graph_followup_{idx}", use_container_width=True):
+                st.session_state.auto_query = clean_q
+                st.rerun()
 
 
 def render_sidebar_dataset_badge(name, rows, cols):

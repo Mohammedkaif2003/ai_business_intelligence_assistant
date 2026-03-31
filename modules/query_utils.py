@@ -278,6 +278,51 @@ def extract_follow_up_questions(raw_suggestions: str) -> list[str]:
     return questions
 
 
+def generate_follow_up_fallbacks(query: str, df: pd.DataFrame, schema: dict) -> list[str]:
+    """Build deterministic follow-up questions when the LLM output is empty or malformed."""
+    follow_ups: list[str] = []
+
+    numeric_cols = schema.get("numeric_columns", []) or df.select_dtypes(include="number").columns.tolist()
+    categorical_cols = schema.get("categorical_columns", []) or df.select_dtypes(exclude="number").columns.tolist()
+    datetime_cols = schema.get("datetime_columns", [])
+
+    primary_metric = numeric_cols[0] if numeric_cols else None
+    primary_category = categorical_cols[0] if categorical_cols else None
+    secondary_category = categorical_cols[1] if len(categorical_cols) > 1 else primary_category
+    primary_time = datetime_cols[0] if datetime_cols else ("Date" if "Date" in df.columns else None)
+
+    if primary_metric and primary_category:
+        follow_ups.append(f"What is the total {primary_metric} by {primary_category}?")
+        follow_ups.append(f"Which {primary_category} has the highest {primary_metric}?")
+
+    if primary_metric and primary_time:
+        follow_ups.append(f"What is the trend of {primary_metric} over {primary_time}?")
+
+    if primary_metric and secondary_category:
+        follow_ups.append(f"How does {primary_metric} compare across {secondary_category}?")
+
+    if primary_metric:
+        follow_ups.append(f"Are there any outliers in {primary_metric}?")
+        follow_ups.append(f"What is the forecast for {primary_metric} based on recent patterns?")
+
+    if not follow_ups:
+        follow_ups = generate_sidebar_question_ideas(df, schema)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in follow_ups:
+        cleaned = str(item).strip()
+        if not cleaned:
+            continue
+        if "?" not in cleaned:
+            cleaned = f"{cleaned.rstrip('.')}?"
+        if cleaned not in seen:
+            deduped.append(cleaned)
+            seen.add(cleaned)
+
+    return deduped[:5]
+
+
 def enhance_query(query: str, df: pd.DataFrame) -> str:
     """Intelligently refine vague queries into more structured ones."""
     q = str(query).lower()

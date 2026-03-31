@@ -1,6 +1,11 @@
 import pandas as pd
 import numpy as np
 
+from modules.app_logging import get_logger
+
+
+logger = get_logger("forecasting")
+
 
 def forecast_revenue(df, periods=3):
     """
@@ -14,6 +19,7 @@ def forecast_revenue(df, periods=3):
         "forecast_df": None,
         "trend": None,
     }
+    logger.info("Starting forecast generation for %s rows and %s periods", len(df), periods)
 
     # Detect date column
     date_col = None
@@ -44,6 +50,7 @@ def forecast_revenue(df, periods=3):
             "No suitable date column was found. "
             "Add a column named Date / Order Date / Transaction Date, or a Year + Month combination."
         )
+        logger.warning("Forecasting aborted: no suitable date column")
         return result
 
     # Detect revenue/numeric column
@@ -63,6 +70,7 @@ def forecast_revenue(df, periods=3):
                 "No numeric metric column found for forecasting. "
                 "Include a column such as Revenue, Sales, Amount, or another numeric field."
             )
+            logger.warning("Forecasting aborted: no numeric metric column")
             return result
 
     try:
@@ -77,6 +85,7 @@ def forecast_revenue(df, periods=3):
 
         if len(monthly) < 3:
             result["message"] = "Not enough monthly data points for forecasting (need at least 3)."
+            logger.warning("Forecasting aborted: only %s monthly points available", len(monthly))
             return result
 
         # Create numeric index for regression
@@ -129,8 +138,10 @@ def forecast_revenue(df, periods=3):
         result["slope"] = round(slope, 2)
         result["metric"] = metric_col
         result["std_error"] = round(std_err, 2)
+        logger.info("Forecast generated successfully for metric %s with trend %s", metric_col, trend)
 
     except Exception as e:
         result["message"] = f"Forecasting error: {str(e)}"
+        logger.exception("Forecasting failed")
 
     return result

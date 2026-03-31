@@ -27,12 +27,14 @@ from modules.ai_code_generator import generate_analysis_code
 from modules.report_generator import generate_pdf
 from modules.insight_engine import generate_business_insight
 from modules.data_loader import normalize_columns
-from modules.auto_visualizer import auto_visualize
+from modules.auto_visualizer import auto_visualize, validate_chart_data
 from modules.auto_insights import generate_auto_insights
 from modules.kpi_engine import generate_kpis
 from modules.forecasting import forecast_revenue
 from modules.ai_conversation import generate_conversational_response, generate_error_response
 from modules.text_utils import clean_text, structure_response
+from modules.app_logging import get_logger
+from modules.app_state import append_message_pair, ensure_analysis_state, reset_analysis_state, store_analysis_outputs
 from ui_components import render_structured_response
 from modules.query_utils import (
     clean_ai_response,
@@ -42,6 +44,7 @@ from modules.query_utils import (
     get_irrelevant_query_message,
     generate_sidebar_question_ideas,
     extract_follow_up_questions,
+    generate_follow_up_fallbacks,
     enhance_query,
     add_date_filter,
     add_filters,
@@ -70,6 +73,8 @@ st.set_page_config(
 )
 from styles import inject_styles
 inject_styles(st)
+logger = get_logger("app")
+ensure_analysis_state()
 
 
 def _format_metric_value(value):
@@ -246,6 +251,20 @@ def _build_summary_list(result, chart_data, query_rejected):
     try:
         if chart_data is not None and not chart_data.empty:
             summary_list = generate_executive_summary(chart_data)
+        elif isinstance(result, pd.DataFrame) and not result.empty:
+            numeric_cols = result.select_dtypes(include="number").columns.tolist()
+            if numeric_cols:
+                metric = numeric_cols[0]
+                summary_list = [
+                    f"The result includes {len(result):,} rows across {len(result.columns)} columns.",
+                    f"Total {metric} is {result[metric].fillna(0).sum():,.2f}.",
+                    f"Average {metric} is {result[metric].fillna(0).mean():,.2f}.",
+                ]
+            else:
+                summary_list = [
+                    f"The result includes {len(result):,} rows across {len(result.columns)} columns.",
+                    f"Columns returned: {', '.join(str(col) for col in result.columns[:4])}.",
+                ]
         elif isinstance(result, (int, float)):
             summary_list = [f"Result obtained: {result}"]
         elif isinstance(result, str) and not _is_error_like_text(result):
@@ -253,12 +272,68 @@ def _build_summary_list(result, chart_data, query_rejected):
         elif isinstance(result, dict):
             summary_list = [f"{k}: {v}" for k, v in result.items() if not _is_error_like_text(v)]
         elif isinstance(result, pd.Series):
-            summary_list = ["Series result generated with multiple values."]
+            metric_name = result.name or "value"
+            summary_list = [
+                f"The result contains {len(result):,} {metric_name} entries.",
+                f"Highest {metric_name} is {result.max():,.2f}." if pd.api.types.is_numeric_dtype(result) else "Series result generated with multiple values.",
+                f"Lowest {metric_name} is {result.min():,.2f}." if pd.api.types.is_numeric_dtype(result) else "",
+            ]
     except Exception as e:
         summary_list = [f"Summary generation failed: {str(e)}"]
 
     cleaned = [item for item in summary_list if item and not _is_error_like_text(item)]
     return cleaned
+
+
+def _build_follow_up_suggestions(query, df, schema):
+    try:
+        raw_suggestions = suggest_business_questions(query, df, schema)
+    except Exception as e:
+        raw_suggestions = f"AI suggestion failed: {str(e)}"
+
+    parsed = extract_follow_up_questions(raw_suggestions)
+    if parsed:
+        return "\n".join(f"{idx}. {question}" for idx, question in enumerate(parsed[:5], start=1))
+
+    fallback_questions = generate_follow_up_fallbacks(query, df, schema)
+    return "\n".join(f"{idx}. {question}" for idx, question in enumerate(fallback_questions, start=1))
+
+
+def _build_graphable_query_suggestions(df, schema):
+    fallback_questions = generate_follow_up_fallbacks("graph suggestions", df, schema)
+    graphable = []
+    for question in fallback_questions:
+        lowered = question.lower()
+        if any(token in lowered for token in ("trend", "compare", "total", "highest", "outlier", "forecast")):
+            graphable.append(question)
+    if not graphable:
+        graphable = fallback_questions
+    return graphable[:4]
+
+
+def _clear_chat_state():
+    reset_analysis_state()
+
+
+def _persist_analysis(query, result, chart_data, chart_figs, code, insight, ai_response, summary_list, suggestions, query_rejected, is_axes_result):
+    report_insight = insight if insight else (ai_response if ai_response else "Analysis completed.")
+    if "<Axes:" in str(report_insight) or "<AxesSubplot" in str(report_insight):
+        report_insight = ai_response if ai_response else "Analysis completed - see AI response for details."
+
+    append_message_pair(query, result)
+    store_analysis_outputs(
+        query=query,
+        result=result,
+        chart_data=chart_data,
+        chart_figs=chart_figs,
+        code=code,
+        report_insight=report_insight,
+        ai_response=ai_response,
+        summary_list=summary_list,
+        suggestions=suggestions,
+        query_rejected=query_rejected,
+        is_axes_result=is_axes_result,
+    )
 
 
 # ---------- SIDEBAR & DATASET LOADING ----------
@@ -563,6 +638,7 @@ with tab2:
         chart_data = None
         insight = ""
         chart_figs = []
+        chart_validation_warnings = []
 
         if isinstance(result, pd.DataFrame):
             chart_data = result
@@ -684,16 +760,17 @@ with tab2:
                 summary_list = []
 
             summary_list = _build_summary_list(result, chart_data, query_rejected)
+            suggestions = ""
 
             # DISPLAY
             if summary_list:
                 with st.expander("Executive Summary", expanded=False):
                     for line in summary_list:
                         st.write("-", line)
-                if not query_rejected:
-                    with st.spinner("Generating follow-up questions..."):
-                        suggestions = suggest_business_questions(query, df, schema)
-                    render_follow_up_section(suggestions, f"live_suggestion_{hash(query)}")
+            if not query_rejected:
+                with st.spinner("Generating follow-up questions..."):
+                    suggestions = _build_follow_up_suggestions(query, df, schema)
+                render_follow_up_section(suggestions, f"live_suggestion_{hash(query)}")
             # 🚨 REMOVE ANY HTML COMPLETELY
             import re
             clean_response = re.sub(r'<[^>]+>', '', clean_response)
@@ -720,21 +797,32 @@ with tab2:
                 chart_figs = ai_charts
 
             if not chart_figs and chart_data is not None:
+                _, chart_validation_warnings = validate_chart_data(chart_data)
                 chart_figs = auto_visualize(chart_data)
             
             if chart_figs:
                 render_result_status(
                     "Chart generated",
-                    "The result shape supports visualization, so charts are shown below.",
+                    "The result shape supports visualization, so charts are shown below with chart-type options and download tools.",
                     kind="success"
                 )
                 render_chart_collection(chart_figs)
             elif not query_rejected:
+                if chart_validation_warnings:
+                    for warning in chart_validation_warnings:
+                        st.caption(warning)
                 render_result_status(
                     "No chart shown",
                     "This result is valid, but it does not have a chart-friendly shape. Try grouping by a category or time column.",
                     kind="info"
                 )
+                suggested_queries = _build_graphable_query_suggestions(df, schema)
+                if suggested_queries:
+                    st.markdown("**Try one of these graph-friendly questions:**")
+                    for idx, suggestion in enumerate(suggested_queries):
+                        if st.button(suggestion, key=f"graphable_prompt_{hash(query)}_{idx}", use_container_width=True):
+                            st.session_state.auto_query = suggestion
+                            st.rerun()
 
             if insight:
                 render_insight_card(insight)
