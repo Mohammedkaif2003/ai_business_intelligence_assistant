@@ -166,10 +166,6 @@ def render_chat_history_entry(entry: dict):
         else:
             render_assistant_bubble(clean_response)
 
-    if entry.get("code") and str(entry.get("code")).strip():
-        with st.expander("View AI Generated Code", expanded=False):
-            st.code(entry["code"], language="python")
-
     chart_data = entry.get("chart_data")
     if chart_data is not None:
         render_dataframe_result(chart_data, f"history_table_{id(entry)}")
@@ -189,9 +185,16 @@ def render_chat_history_entry(entry: dict):
 
     summary_list = entry.get("summary", [])
     if summary_list:
-        with st.expander("Executive Summary", expanded=False):
+        with st.expander("Answer Summary", expanded=False):
             for line in summary_list:
                 st.write("-", line)
 
     if entry.get("suggestions"):
         render_follow_up_section(entry["suggestions"], f"suggest_{id(entry)}")
+
+    if entry.get("rephrases"):
+        st.markdown("**Suggested Rephrases**")
+        for idx, suggestion in enumerate(entry["rephrases"]):
+            if st.button(suggestion, key=f"history_rephrase_{id(entry)}_{idx}", use_container_width=True):
+                st.session_state.auto_query = suggestion
+                st.rerun()

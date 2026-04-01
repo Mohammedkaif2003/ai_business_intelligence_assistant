@@ -383,19 +383,91 @@ def chart_download_bytes(chart: dict) -> bytes:
     return b""
 
 
-def build_graph_follow_up_questions(chart: dict) -> list[str]:
-    x_col = chart.get("x_col")
-    y_cols = chart.get("y_cols", [])
+def _dedupe_suggestion_items(items: list[dict]) -> list[dict]:
+    deduped: list[dict] = []
+    seen_questions: set[str] = set()
+    for item in items:
+        question = str(item.get("question", "")).strip()
+        if not question or question in seen_questions:
+            continue
+        deduped.append(item)
+        seen_questions.add(question)
+    return deduped
+
+
+def build_graph_follow_up_suggestions(chart: dict) -> list[dict]:
+    data = chart.get("data")
+    df = data if isinstance(data, pd.DataFrame) else pd.DataFrame()
+    x_col = chart.get("x_col") or "category"
+    y_cols = chart.get("y_cols", []) or []
     primary_metric = y_cols[0] if y_cols else "value"
-    follow_ups = [
-        f"Break down {primary_metric} by another category.",
-        f"Show the monthly trend of {primary_metric}.",
-        f"Compare the top 5 {x_col} by {primary_metric}.",
-        f"Find anomalies in {primary_metric}.",
-    ]
-    if chart.get("chart_type") == "line":
-        follow_ups[1] = f"Forecast the next values for {primary_metric}."
-    return follow_ups
+    chart_type = str(chart.get("chart_type", "")).lower()
+
+    if df.empty or not y_cols or not x_col or x_col == "category" or primary_metric == "value":
+        return []
+
+    datetime_cols = _find_datetime_columns(df.copy()) if not df.empty else []
+    numeric_cols = df.select_dtypes(include="number").columns.tolist() if not df.empty else []
+    categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist() if not df.empty else []
+    alternate_categories = [col for col in categorical_cols if col != x_col]
+    secondary_metric = next((col for col in numeric_cols if col != primary_metric), None)
+
+    suggestions: list[dict] = []
+
+    if alternate_categories:
+        category = alternate_categories[0]
+        suggestions.append(
+            {
+                "question": f"Create a bar chart of {primary_metric} by {category}.",
+                "expected_output": "chart",
+                "chart_type": "bar",
+                "confidence": 0.95,
+                "reason": f"{category} is available as another categorical split.",
+            }
+        )
+
+    if datetime_cols:
+        time_col = datetime_cols[0]
+        trend_question = f"Plot the trend of {primary_metric} over {time_col}."
+        if chart_type == "line":
+            trend_question = f"Forecast the next values of {primary_metric} using {time_col}."
+        suggestions.append(
+            {
+                "question": trend_question,
+                "expected_output": "chart",
+                "chart_type": "line",
+                "confidence": 0.93 if chart_type != "line" else 0.89,
+                "reason": f"{time_col} looks like a time field.",
+            }
+        )
+
+    if x_col and primary_metric and x_col != "category":
+        suggestions.append(
+            {
+                "question": f"Create a bar chart of the top 5 {x_col} by {primary_metric}.",
+                "expected_output": "chart",
+                "chart_type": "bar",
+                "confidence": 0.94,
+                "reason": "Ranking prompts typically produce chartable grouped data.",
+            }
+        )
+
+    if secondary_metric:
+        suggestions.append(
+            {
+                "question": f"Create a scatter plot of {primary_metric} versus {secondary_metric}.",
+                "expected_output": "chart",
+                "chart_type": "scatter",
+                "confidence": 0.88,
+                "reason": f"Both {primary_metric} and {secondary_metric} are numeric.",
+            }
+        )
+
+    return _dedupe_suggestion_items(suggestions)[:5]
+
+
+def build_graph_follow_up_questions(chart: dict) -> list[str]:
+    return [item["question"] for item in build_graph_follow_up_suggestions(chart)]
 
 
 def auto_visualize(data: Any) -> list[dict]:

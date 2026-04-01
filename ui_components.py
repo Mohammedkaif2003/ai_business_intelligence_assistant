@@ -6,7 +6,10 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-from modules.auto_visualizer import build_graph_follow_up_questions, chart_download_bytes
+from modules.auto_visualizer import (
+    build_graph_follow_up_suggestions,
+    chart_download_bytes,
+)
 
 
 def clean_text(text: str) -> str:
@@ -187,7 +190,8 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
             zerolinecolor="rgba(148, 163, 184, 0.12)",
         ),
     )
-    st_instance.plotly_chart(fig, use_container_width=True)
+    chart_key = key_prefix or re.sub(r"[^a-zA-Z0-9_]+", "_", payload.get("title", "chart"))
+    st_instance.plotly_chart(fig, use_container_width=True, key=f"{chart_key}_plot")
 
     rationale = clean_text(payload.get("rationale", ""))
     if rationale:
@@ -203,7 +207,7 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
             st_instance.write(f"- {clean_text(item)}")
 
     data = payload.get("data")
-    download_key = key_prefix or re.sub(r"[^a-zA-Z0-9_]+", "_", payload.get("title", "chart"))
+    download_key = chart_key
     if isinstance(data, pd.DataFrame) and not data.empty:
         left, right = st_instance.columns(2)
         with left:
@@ -229,12 +233,13 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
             except Exception:
                 st.caption("PNG export is unavailable in this environment.")
 
-    follow_ups = build_graph_follow_up_questions(payload)
-    if follow_ups:
-        st_instance.markdown("**Graph Follow-Ups**")
-        for idx, question in enumerate(follow_ups):
-            clean_q = clean_text(question)
-            if st_instance.button(clean_q, key=f"{download_key}_graph_followup_{idx}", use_container_width=True):
+    suggestion_items = build_graph_follow_up_suggestions(payload)
+    if suggestion_items:
+        st_instance.markdown("**Suggested Graphs**")
+        st_instance.caption("These prompts are the most likely to return chart-friendly results.")
+        for idx, item in enumerate(suggestion_items):
+            clean_q = clean_text(item["question"])
+            if st_instance.button(clean_q, key=f"{download_key}_graph_followup_chart_{idx}", use_container_width=True):
                 st.session_state.auto_query = clean_q
                 st.rerun()
 

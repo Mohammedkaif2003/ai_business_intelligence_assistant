@@ -74,6 +74,9 @@ RULES:
 - Include one question about anomalies or outlier detection
 - Make questions progressively deeper (start simple, end complex)
 - Use the actual column names and category values where possible
+- Keep each question short and easy to execute
+- Prefer one analytic step per question
+- Avoid requiring prior results, multiple separate comparisons, or extra assumptions
 - Format as numbered list (1. 2. 3. 4. 5.)
 - Each question should be self-contained and specific enough to get a direct answer
 """

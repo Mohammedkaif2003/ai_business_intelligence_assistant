@@ -37,6 +37,9 @@ from modules.app_logging import get_logger
 from modules.app_state import append_message_pair, ensure_analysis_state, reset_analysis_state, store_analysis_outputs
 from ui_components import render_structured_response
 from modules.query_utils import (
+    build_clarification_prompt,
+    build_rephrase_suggestions,
+    classify_query_intent,
     clean_ai_response,
     is_memory_query,
     detect_simple_query,
@@ -235,8 +238,87 @@ def _is_error_like_text(value) -> bool:
         "not defined",
         "could not generate ai report",
         "comparison failed",
+        "comparison not supported",
+        "need at least two results",
+        "not applicable",
+        "more data needed",
     ]
     return any(marker in text for marker in error_markers)
+
+
+def _result_type_label(result, chart_data):
+    if chart_data is not None and isinstance(chart_data, pd.DataFrame) and not chart_data.empty:
+        return "chartable_table"
+    if isinstance(result, pd.DataFrame):
+        return "dataframe"
+    if isinstance(result, pd.Series):
+        return "series"
+    if isinstance(result, dict):
+        return "dict"
+    if isinstance(result, (int, float)):
+        return "scalar"
+    if isinstance(result, str):
+        return "text"
+    return type(result).__name__.lower()
+
+
+def _build_ai_summary_fallback(ai_response: str) -> list[str]:
+    cleaned = clean_text(ai_response)
+    if not cleaned:
+        return []
+
+    lines = [line.strip("- ").strip() for line in cleaned.splitlines() if line.strip()]
+    summary = []
+    for line in lines:
+        lower = line.lower()
+        if lower.endswith(":") or lower in {
+            "executive insight",
+            "key findings",
+            "business impact",
+            "limitations",
+            "recommendations",
+        }:
+            continue
+        summary.append(line)
+        if len(summary) >= 3:
+            break
+    return summary
+
+
+def _build_result_history_entry(query, result, chart_data, intent_info, query_rejected):
+    result_shape = None
+    if isinstance(result, pd.DataFrame):
+        result_shape = tuple(result.shape)
+    elif isinstance(chart_data, pd.DataFrame):
+        result_shape = tuple(chart_data.shape)
+
+    key_columns = []
+    if isinstance(result, pd.DataFrame):
+        key_columns = [str(col) for col in result.columns[:4]]
+    elif isinstance(chart_data, pd.DataFrame):
+        key_columns = [str(col) for col in chart_data.columns[:4]]
+
+    return {
+        "query": query,
+        "intent": intent_info.get("intent", "analysis"),
+        "result_type": _result_type_label(result, chart_data),
+        "key_columns": key_columns,
+        "chartable": bool(chart_data is not None and isinstance(chart_data, pd.DataFrame) and not chart_data.empty),
+        "result_shape": result_shape,
+        "query_rejected": query_rejected,
+    }
+
+
+def _build_failure_message(query, intent_info, schema, rephrase_suggestions):
+    intent_label = intent_info.get("intent", "analysis").replace("_", " ")
+    message = f"I understood this as a {intent_label} request, but I could not answer it reliably with the current analysis path."
+    if rephrase_suggestions:
+        message += f" Try one of these instead: {rephrase_suggestions[0]}"
+        if len(rephrase_suggestions) > 1:
+            message += f" or {rephrase_suggestions[1]}"
+    else:
+        message += f" Try asking about columns like {', '.join(schema.get('column_names', [])[:3])}."
+    return message
 
 
 def _build_summary_list(result, chart_data, query_rejected):
@@ -267,8 +349,10 @@ def _build_summary_list(result, chart_data, query_rejected):
                 ]
         elif isinstance(result, (int, float)):
             summary_list = [f"Result obtained: {result}"]
-        elif isinstance(result, str) and not _is_error_like_text(result):
-            summary_list = [f"Result obtained: {result}"]
+        elif isinstance(result, str):
+            cleaned_result = str(result).strip()
+            if cleaned_result:
+                summary_list = [cleaned_result]
         elif isinstance(result, dict):
             summary_list = [f"{k}: {v}" for k, v in result.items() if not _is_error_like_text(v)]
         elif isinstance(result, pd.Series):
@@ -281,7 +365,7 @@ def _build_summary_list(result, chart_data, query_rejected):
     except Exception as e:
         summary_list = [f"Summary generation failed: {str(e)}"]
 
-    cleaned = [item for item in summary_list if item and not _is_error_like_text(item)]
+    cleaned = [str(item).strip() for item in summary_list if item and not _is_error_like_text(item)]
     return cleaned
 
 
@@ -292,6 +376,28 @@ def _build_follow_up_suggestions(query, df, schema):
         raw_suggestions = f"AI suggestion failed: {str(e)}"
 
     parsed = extract_follow_up_questions(raw_suggestions)
+    simple_parsed = []
+    for question in parsed:
+        lowered = question.lower()
+        if any(
+            marker in lowered
+            for marker in (
+                "previous result",
+                "previous one",
+                "last result",
+                "last two results",
+                "compared to the overall average",
+                "2 standard deviations",
+                "if we assume",
+                "consistently",
+            )
+        ):
+            continue
+        simple_parsed.append(question)
+
+    if simple_parsed:
+        return "\n".join(f"{idx}. {question}" for idx, question in enumerate(simple_parsed[:5], start=1))
+
     if parsed:
         return "\n".join(f"{idx}. {question}" for idx, question in enumerate(parsed[:5], start=1))
 
@@ -561,9 +667,21 @@ with tab2:
         suggestions = ""
         summary_list = []
         query_rejected = False
+        intent_info = classify_query_intent(query, df, schema)
+        rephrase_suggestions = build_rephrase_suggestions(query, df, schema, intent=intent_info.get("intent"))
 
         with st.spinner("🔍 AI analyzing your dataset..."):
-            if not is_dataset_related_query(query, df, schema):
+            if intent_info.get("needs_clarification"):
+                ai_response = build_clarification_prompt(query, df, schema)
+                code = "# Clarification requested before analysis"
+                result = ai_response
+                execution_output = result
+                ai_charts = []
+                chart_data = None
+                insight = ""
+                chart_figs = []
+                query_rejected = True
+            elif not is_dataset_related_query(query, df, schema):
                 ai_response = get_irrelevant_query_message(schema)
                 code = "# Query rejected as unrelated to the active dataset"
                 result = ai_response
@@ -579,14 +697,15 @@ with tab2:
                 enhanced_query = add_date_filter(enhanced_query, df)
                 simple_code = detect_simple_query(query, df)
                 # MEMORY LEVEL 2
-                if is_memory_query(query) and "result_history" in st.session_state:
-
-                    history = st.session_state.result_history
+                if is_memory_query(query) and "result_history_details" in st.session_state:
+                    history = st.session_state.get("result_history", [])
+                    detailed_history = st.session_state.get("result_history_details", [])
 
                     if len(history) >= 2:
-
                         last = history[-1]
                         prev = history[-2]
+                        last_meta = detailed_history[-1] if len(detailed_history) >= 1 else {}
+                        prev_meta = detailed_history[-2] if len(detailed_history) >= 2 else {}
 
                         try:
                             # numbers
@@ -603,7 +722,11 @@ with tab2:
                                         result[f"{col}_diff"] = last[col] - prev[col]
 
                             else:
-                                result = last
+                                result = (
+                                    f"Comparison not supported for the last two results. "
+                                    f"The previous result type was {prev_meta.get('result_type', 'unknown')} and "
+                                    f"the latest result type was {last_meta.get('result_type', 'unknown')}."
+                                )
 
                         except Exception:
                             result = last
@@ -612,7 +735,7 @@ with tab2:
                         execution_output = result
 
                     else:
-                        result = st.session_state.last_result
+                        result = "Need at least two results to compare."
                         code = "# Only one result available"
                         execution_output = result
 
@@ -663,7 +786,7 @@ with tab2:
             chart_data = result
         if is_error:
             with st.spinner("💭 AI is thinking..."):
-                ai_response = generate_error_response(query, str(result))
+                ai_response = _build_failure_message(query, intent_info, schema, rephrase_suggestions)
         else:
             if chart_data is not None:
                 insight = generate_business_insight(chart_data)
@@ -674,14 +797,17 @@ with tab2:
                 if is_memory_query(query):
 
                     history = st.session_state.get("result_history", [])
+                    detailed_history = st.session_state.get("result_history_details", [])
 
                     if len(history) < 2:
-                        ai_response = "⚠️ Need at least two results to compare."
+                        ai_response = _build_failure_message(query, intent_info, schema, rephrase_suggestions)
 
                     else:
                         try:
                             last = history[-1]
                             prev = history[-2]
+                            last_meta = detailed_history[-1] if len(detailed_history) >= 1 else {}
+                            prev_meta = detailed_history[-2] if len(detailed_history) >= 2 else {}
 
                             # ✅ TRY NUMERIC CONVERSION FIRST
                             try:
@@ -711,10 +837,14 @@ with tab2:
                                 if isinstance(last, pd.DataFrame) and isinstance(prev, pd.DataFrame):
                                     ai_response = "📊 Comparison completed (difference columns added)."
                                 else:
-                                    ai_response = "⚠️ Comparison not supported for this data type."
+                                    ai_response = (
+                                        f"I understood this as a comparison request, but the last two saved results "
+                                        f"cannot be compared directly ({prev_meta.get('result_type', 'unknown')} vs "
+                                        f"{last_meta.get('result_type', 'unknown')})."
+                                    )
 
                         except Exception as e:
-                            ai_response = f"⚠️ Comparison failed: {str(e)}"
+                            ai_response = _build_failure_message(query, intent_info, schema, rephrase_suggestions)
                 if not ai_response:
                     try:
                         ai_response = generate_conversational_response(
@@ -724,53 +854,33 @@ with tab2:
                             df=df
                         )
                     except Exception:
-                        ai_response = "⚠️ Could not generate AI report."                   
+                        ai_response = _build_failure_message(query, intent_info, schema, rephrase_suggestions)
         if ai_response:
             clean_response = clean_text(ai_response)
             # =========================
             # ✅ FINAL EXECUTIVE SUMMARY FIX
             # =========================
 
-            summary_list = []
-
-            try:
-                # CASE 1: DataFrame
-                if chart_data is not None and not chart_data.empty:
-                    summary_list = generate_executive_summary(chart_data)
-
-                # CASE 2: Number / String
-                elif isinstance(result, (int, float, str)):
-                    summary_list = [f"Result obtained: {result}"]
-
-                # CASE 3: Dict
-                elif isinstance(result, dict):
-                    summary_list = [f"{k}: {v}" for k, v in result.items()]
-
-                # CASE 4: Series
-                elif isinstance(result, pd.Series):
-                    summary_list = ["Series result generated with multiple values."]
-
-            except Exception as e:
-                summary_list = [f"⚠️ Summary generation failed: {str(e)}"]
-
-            # FINAL SAFETY
-            if not summary_list:
-                summary_list = ["No significant summary could be generated."]
-            if query_rejected:
-                summary_list = []
-
             summary_list = _build_summary_list(result, chart_data, query_rejected)
+            if not summary_list and not query_rejected and not _is_error_like_text(ai_response):
+                summary_list = _build_ai_summary_fallback(ai_response)
             suggestions = ""
 
             # DISPLAY
             if summary_list:
-                with st.expander("Executive Summary", expanded=False):
+                with st.expander("Answer Summary", expanded=False):
                     for line in summary_list:
                         st.write("-", line)
             if not query_rejected:
                 with st.spinner("Generating follow-up questions..."):
                     suggestions = _build_follow_up_suggestions(query, df, schema)
                 render_follow_up_section(suggestions, f"live_suggestion_{hash(query)}")
+                if _is_error_like_text(result) or _is_error_like_text(ai_response):
+                    st.markdown("**Suggested Rephrases**")
+                    for idx, suggestion in enumerate(rephrase_suggestions):
+                        if st.button(suggestion, key=f"rephrase_prompt_{hash(query)}_{idx}", use_container_width=True):
+                            st.session_state.auto_query = suggestion
+                            st.rerun()
             # 🚨 REMOVE ANY HTML COMPLETELY
             import re
             clean_response = re.sub(r'<[^>]+>', '', clean_response)
@@ -782,9 +892,6 @@ with tab2:
             else:
                 render_assistant_bubble(clean_response)
 
-        if not query_rejected:
-            with st.expander("View AI Generated Code", expanded=False):
-                st.code(code, language="python")
         # ✅ ADD THIS BLOCK HERE
         if isinstance(chart_data, pd.DataFrame) and chart_data.empty:
             st.warning("No outliers found in the dataset based on the current criteria.")
@@ -854,8 +961,13 @@ with tab2:
         # ✅ STORE HISTORY
         if "result_history" not in st.session_state:
             st.session_state.result_history = []
+        if "result_history_details" not in st.session_state:
+            st.session_state.result_history_details = []
 
         st.session_state.result_history.append(result)
+        st.session_state.result_history_details.append(
+            _build_result_history_entry(query, result, chart_data, intent_info, query_rejected)
+        )
         st.session_state.analysis_query = query
         if chart_data is not None:
             st.session_state.chart_data = chart_data
@@ -874,6 +986,7 @@ with tab2:
                 "ai_response": ai_response,
                 "charts": chart_figs,
                 "summary": summary_list,
+                "intent": intent_info.get("intent"),
             })
 
         st.session_state.chat_history.append({
@@ -887,6 +1000,8 @@ with tab2:
             "ai_response": ai_response,
             "suggestions": suggestions if (not query_rejected and suggestions) else "",
             "query_rejected": query_rejected,
+            "intent": intent_info.get("intent"),
+            "rephrases": rephrase_suggestions if (_is_error_like_text(result) or _is_error_like_text(ai_response)) else [],
         })
         st.rerun()
 

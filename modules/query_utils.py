@@ -26,11 +26,17 @@ def is_memory_query(query: str) -> bool:
     return any(
         phrase in q
         for phrase in (
-            "previous",
+            "previous result",
+            "previous one",
             "last result",
-            "compare",
-            "earlier",
-            "difference",
+            "last two results",
+            "earlier result",
+            "earlier one",
+            "compare with previous",
+            "compare to previous",
+            "compare the last two",
+            "difference between the last two",
+            "difference from previous",
         )
     )
 
@@ -63,6 +69,144 @@ def detect_simple_query(query: str, df: pd.DataFrame) -> Optional[str]:
 
 def _tokenize_query_text(text: str) -> set[str]:
     return set(re.findall(r"[a-zA-Z0-9]+", str(text).lower()))
+
+
+def _build_dataset_token_set(df: pd.DataFrame, schema: dict) -> set[str]:
+    dataset_tokens: set[str] = set()
+    for col in schema.get("column_names", []):
+        dataset_tokens.update(_tokenize_query_text(col))
+
+    for col in schema.get("numeric_columns", []):
+        dataset_tokens.update(_tokenize_query_text(col))
+
+    for col in schema.get("categorical_columns", [])[:5]:
+        dataset_tokens.update(_tokenize_query_text(col))
+        try:
+            sample_values = df[col].dropna().astype(str).unique()[:10]
+            for value in sample_values:
+                dataset_tokens.update(_tokenize_query_text(value))
+        except Exception:
+            continue
+    return dataset_tokens
+
+
+def classify_query_intent(query: str, df: pd.DataFrame, schema: dict | None = None) -> dict:
+    schema = schema or analyze_dataset(df)
+    q = str(query).strip().lower()
+    query_tokens = _tokenize_query_text(q)
+    dataset_tokens = _build_dataset_token_set(df, schema)
+    matched_dataset_terms = query_tokens & dataset_tokens
+
+    numeric_cols = schema.get("numeric_columns", []) or df.select_dtypes(include="number").columns.tolist()
+    categorical_cols = schema.get("categorical_columns", []) or df.select_dtypes(exclude="number").columns.tolist()
+    datetime_cols = schema.get("datetime_columns", [])
+
+    needs_clarification = False
+    clarification_reason = ""
+    intent = "analysis"
+
+    if is_memory_query(query):
+        intent = "comparison"
+    elif any(token in q for token in ("forecast", "predict", "projection")):
+        intent = "forecast"
+    elif any(token in q for token in ("chart", "plot", "graph", "visualize", "trend", "distribution")):
+        intent = "chart"
+    elif any(token in q for token in ("compare", "difference", "versus", "vs")):
+        intent = "comparison"
+    elif any(token in q for token in ("summary", "summarize", "overview", "insight", "explain")):
+        intent = "summary"
+    elif any(token in q for token in ("show", "list", "table", "records")):
+        intent = "table"
+
+    if intent == "comparison" and not matched_dataset_terms and len(query_tokens) <= 4:
+        needs_clarification = True
+        clarification_reason = "comparison_dimension"
+    elif intent in {"chart", "table"} and not matched_dataset_terms and len(query_tokens) <= 4:
+        needs_clarification = True
+        clarification_reason = "missing_dimension"
+    elif intent == "summary" and not matched_dataset_terms and not numeric_cols and not categorical_cols:
+        needs_clarification = True
+        clarification_reason = "missing_metric"
+
+    return {
+        "intent": intent,
+        "matched_dataset_terms": sorted(matched_dataset_terms),
+        "needs_clarification": needs_clarification,
+        "clarification_reason": clarification_reason,
+        "confidence": round(min(0.98, 0.45 + 0.1 * len(matched_dataset_terms)), 2),
+        "has_datetime": bool(datetime_cols),
+        "has_multiple_numeric": len(numeric_cols) >= 2,
+    }
+
+
+def build_clarification_prompt(query: str, df: pd.DataFrame, schema: dict | None = None) -> str:
+    schema = schema or analyze_dataset(df)
+    numeric_cols = schema.get("numeric_columns", []) or df.select_dtypes(include="number").columns.tolist()
+    categorical_cols = schema.get("categorical_columns", []) or df.select_dtypes(exclude="number").columns.tolist()
+    datetime_cols = schema.get("datetime_columns", [])
+
+    if numeric_cols and categorical_cols:
+        metric = numeric_cols[0]
+        category = categorical_cols[0]
+        if datetime_cols:
+            return (
+                f"I can answer that, but I need one more detail. Do you want {metric} overall, "
+                f"by {category}, or over {datetime_cols[0]}?"
+            )
+        return (
+            f"I can answer that, but I need one more detail. Do you want {metric} overall "
+            f"or broken down by {category}?"
+        )
+
+    if numeric_cols:
+        return f"I can answer that, but please tell me which metric to use, such as {numeric_cols[0]}."
+
+    if categorical_cols:
+        return f"I can answer that, but please tell me how you want to group the result, such as by {categorical_cols[0]}."
+
+    return "I can help with that, but I need a little more detail about which columns or metric you want me to analyze."
+
+
+def build_rephrase_suggestions(query: str, df: pd.DataFrame, schema: dict | None = None, intent: str | None = None) -> list[str]:
+    schema = schema or analyze_dataset(df)
+    numeric_cols = schema.get("numeric_columns", []) or df.select_dtypes(include="number").columns.tolist()
+    categorical_cols = schema.get("categorical_columns", []) or df.select_dtypes(exclude="number").columns.tolist()
+    datetime_cols = schema.get("datetime_columns", [])
+    intent = intent or classify_query_intent(query, df, schema).get("intent", "analysis")
+
+    suggestions: list[str] = []
+    metric = numeric_cols[0] if numeric_cols else None
+    category = categorical_cols[0] if categorical_cols else None
+    time_col = datetime_cols[0] if datetime_cols else None
+
+    if intent == "comparison" and metric and category:
+        suggestions.append(f"Compare {metric} by {category}.")
+        if len(numeric_cols) >= 2:
+            suggestions.append(f"Compare {numeric_cols[0]} with {numeric_cols[1]} by {category}.")
+    if intent == "chart" and metric and category:
+        suggestions.append(f"Show a chart of {metric} by {category}.")
+        if time_col:
+            suggestions.append(f"Plot the trend of {metric} over {time_col}.")
+    if intent in {"summary", "analysis"} and metric:
+        suggestions.append(f"Summarize the key insights for {metric}.")
+        if category:
+            suggestions.append(f"What are the main insights for {metric} by {category}?")
+    if intent == "table" and category and metric:
+        suggestions.append(f"Show {metric} by {category} in a table.")
+    if metric and time_col:
+        suggestions.append(f"What is the trend of {metric} over {time_col}?")
+
+    if not suggestions:
+        suggestions = generate_sidebar_question_ideas(df, schema)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for suggestion in suggestions:
+        cleaned = str(suggestion).strip()
+        if cleaned and cleaned not in seen:
+            deduped.append(cleaned)
+            seen.add(cleaned)
+    return deduped[:3]
 
 
 def is_dataset_related_query(query: str, df: pd.DataFrame, schema: dict | None = None) -> bool:
@@ -163,22 +307,7 @@ def is_dataset_related_query(query: str, df: pd.DataFrame, schema: dict | None =
         return True
 
     schema = schema or analyze_dataset(df)
-    dataset_tokens: set[str] = set()
-
-    for col in schema.get("column_names", []):
-        dataset_tokens.update(_tokenize_query_text(col))
-
-    for col in schema.get("numeric_columns", []):
-        dataset_tokens.update(_tokenize_query_text(col))
-
-    for col in schema.get("categorical_columns", [])[:5]:
-        dataset_tokens.update(_tokenize_query_text(col))
-        try:
-            sample_values = df[col].dropna().astype(str).unique()[:10]
-            for value in sample_values:
-                dataset_tokens.update(_tokenize_query_text(value))
-        except Exception:
-            continue
+    dataset_tokens = _build_dataset_token_set(df, schema)
 
     matched_dataset_terms = meaningful_tokens & dataset_tokens
     matched_analytics_terms = meaningful_tokens & analytics_keywords
@@ -271,6 +400,8 @@ def extract_follow_up_questions(raw_suggestions: str) -> list[str]:
         if lower.startswith("here are") or lower.startswith("follow-up questions"):
             continue
         if "?" not in cleaned:
+            continue
+        if len(cleaned) > 120:
             continue
 
         questions.append(cleaned)

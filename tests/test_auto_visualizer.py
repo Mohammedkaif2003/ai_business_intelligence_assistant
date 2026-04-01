@@ -2,6 +2,7 @@ import pandas as pd
 
 from modules.auto_visualizer import (
     auto_visualize,
+    build_graph_follow_up_suggestions,
     build_graph_follow_up_questions,
     validate_chart_data,
 )
@@ -37,5 +38,28 @@ def test_auto_visualize_returns_rich_chart_payloads():
 def test_build_graph_follow_up_questions_returns_questions():
     chart = auto_visualize(_sample_chart_df())[0]
     follow_ups = build_graph_follow_up_questions(chart)
-    assert len(follow_ups) == 4
+    assert len(follow_ups) >= 2
     assert all(question.endswith(".") or question.endswith("?") for question in follow_ups)
+
+
+def test_build_graph_follow_up_suggestions_adds_graph_metadata():
+    chart = auto_visualize(_sample_chart_df())[0]
+    suggestions = build_graph_follow_up_suggestions(chart)
+
+    assert suggestions
+    assert all(isinstance(item, dict) for item in suggestions)
+    assert all("question" in item for item in suggestions)
+    assert any(item.get("expected_output") == "chart" for item in suggestions)
+    assert any("Forecast" in item["question"] for item in suggestions)
+
+
+def test_build_graph_follow_up_suggestions_returns_empty_for_generic_chart_payload():
+    suggestions = build_graph_follow_up_suggestions(
+        {
+            "data": None,
+            "x_col": "",
+            "y_cols": [],
+            "chart_type": "chart",
+        }
+    )
+    assert suggestions == []

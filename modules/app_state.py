@@ -8,6 +8,7 @@ def ensure_analysis_state():
         "messages": [],
         "analysis_history": [],
         "result_history": [],
+        "result_history_details": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -15,7 +16,7 @@ def ensure_analysis_state():
 
 
 def reset_analysis_state():
-    for key in ("chat_history", "messages", "analysis_history", "result_history"):
+    for key in ("chat_history", "messages", "analysis_history", "result_history", "result_history_details"):
         st.session_state[key] = []
 
 

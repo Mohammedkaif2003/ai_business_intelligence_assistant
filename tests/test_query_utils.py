@@ -1,6 +1,9 @@
 import pandas as pd
 
 from modules.query_utils import (
+    build_clarification_prompt,
+    build_rephrase_suggestions,
+    classify_query_intent,
     is_dataset_related_query,
     detect_simple_query,
     is_memory_query,
@@ -34,7 +37,9 @@ def test_is_dataset_related_query_true_for_column_name():
 
 def test_is_memory_query():
     assert is_memory_query("compare with previous result")
+    assert is_memory_query("difference between the last two results")
     assert not is_memory_query("show total revenue")
+    assert not is_memory_query("compare actual with budget by department")
 
 
 def test_is_dataset_related_query_false_for_general_chitchat():
@@ -46,6 +51,16 @@ def test_extract_follow_up_questions_filters_non_questions():
     raw = "Here are some follow-up questions:\n1. What is total revenue by region?\n- Compare revenue by month?\nThis is not a question"
     parsed = extract_follow_up_questions(raw)
     assert parsed == ["What is total revenue by region?", "Compare revenue by month?"]
+
+
+def test_extract_follow_up_questions_filters_overly_long_items():
+    raw = (
+        "1. What is revenue by region?\n"
+        "2. How does the average revenue by region compare across every period and segment while also "
+        "explaining the likely drivers and next quarter outlook?"
+    )
+    parsed = extract_follow_up_questions(raw)
+    assert parsed == ["What is revenue by region?"]
 
 
 def test_generate_follow_up_fallbacks_returns_question_list():
@@ -64,4 +79,31 @@ def test_generate_follow_up_fallbacks_returns_question_list():
 def test_get_irrelevant_query_message_mentions_columns():
     message = get_irrelevant_query_message({"column_names": ["Revenue", "Region", "Date"]})
     assert "Revenue" in message
+
+
+def test_classify_query_intent_detects_chart_request():
+    df = _sample_df()
+    intent = classify_query_intent("show a chart of revenue by region", df)
+    assert intent["intent"] == "chart"
+    assert intent["needs_clarification"] is False
+
+
+def test_classify_query_intent_flags_ambiguous_compare():
+    df = _sample_df()
+    intent = classify_query_intent("compare", df)
+    assert intent["intent"] == "comparison"
+    assert intent["needs_clarification"] is True
+
+
+def test_build_clarification_prompt_mentions_dataset_fields():
+    df = _sample_df()
+    prompt = build_clarification_prompt("compare", df)
+    assert "Revenue" in prompt
+
+
+def test_build_rephrase_suggestions_returns_actionable_prompts():
+    df = _sample_df()
+    suggestions = build_rephrase_suggestions("compare", df, intent="comparison")
+    assert suggestions
+    assert any("Compare Revenue" in suggestion or "trend of Revenue" in suggestion for suggestion in suggestions)
 
