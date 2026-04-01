@@ -1,163 +1,414 @@
-# ── Reusable UI building blocks ── edit this file to change component designs
+import html
+import re
+from html import unescape
 
 import streamlit as st
-from config import KPI_ACCENT_COLORS, KPI_ICONS
-import re
+import pandas as pd
+import plotly.graph_objects as go
 
-def parse_markdown(text: str) -> str:
-    """Parse basic markdown into HTML for UI rendering."""
-    if not text: return ""
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    return text.replace('\n', '<br>')
+def build_graph_follow_up_suggestions(payload):
+    return []
 
-def render_kpi_cards(kpis: list):
-    """Render KPI cards in a 4-column grid with premium styling."""
-    if not kpis:
-        st.info("No numeric columns available for KPI metrics.")
-        return
-    cols = st.columns(len(kpis))
-    
-    # Premium gradient maps
-    gradients = [
-        "linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%)", # Indigo to Blue
-        "linear-gradient(135deg, #059669 0%, #10B981 100%)", # Emerald
-        "linear-gradient(135deg, #D97706 0%, #F59E0B 100%)", # Amber
-        "linear-gradient(135deg, #E11D48 0%, #F43F5E 100%)"  # Rose
-    ]
-    
-    shadow_colors = [
-        "rgba(79, 70, 229, 0.2)",
-        "rgba(16, 185, 129, 0.2)",
-        "rgba(245, 158, 11, 0.2)",
-        "rgba(244, 63, 94, 0.2)"
-    ]
+def chart_download_bytes(payload):
+    return b""
 
-    for i, kpi in enumerate(kpis):
-        idx = i % len(gradients)
-        grad = gradients[idx]
-        shadow = shadow_colors[idx]
-        icon = KPI_ICONS[i % len(KPI_ICONS)]
-        
-        with cols[i]:
-            # Critical: removed all blank newlines from the string
-            st.markdown(f"""
-            <div style="background: white; border-radius: 20px; padding: 24px; position: relative; overflow: hidden; border: 1px solid #F1F5F9; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01); transition: transform 0.3s ease, box-shadow 0.3s ease;" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01)';">
-                <!-- Decorative blurred circle in the background -->
-                <div style="position: absolute; top: -20px; right: -20px; width: 100px; height: 100px; background: {grad}; opacity: 0.1; filter: blur(20px); border-radius: 50%;"></div>
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-                    <div style="color: #64748B; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
-                        {kpi['metric']}
-                    </div>
-                    <div style="width: 36px; height: 36px; border-radius: 10px; background: {grad}; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px {shadow};">
-                        <span style="font-size: 18px; color: white;">{icon}</span>
-                    </div>
-                </div>
-                <div style="font-size: 32px; font-weight: 800; color: #0F172A; letter-spacing: -0.5px; line-height: 1;">
-                   {kpi['total']:,.2f}
-                </div>
-                <div style="display: flex; align-items: center; gap: 6px; margin-top: 12px;">
-                    <span style="display: inline-flex; align-items: center; justify-content: center; padding: 2px 6px; border-radius: 4px; background: #ECFDF5; color: #059669; font-size: 11px; font-weight: 600;">
-                        Avg
-                    </span>
-                    <span style="font-size: 13px; color: #64748B; font-weight: 500;">
-                        {kpi['average']:,.2f}
-                    </span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
 
-def render_section_header(title: str, subtitle: str = ""):
-    st.markdown(f"""
-    <div style="margin: 2.5rem 0 1.5rem;">
-      <h2 style="font-size: 26px; font-weight: 800; color: #0F172A; letter-spacing: -0.5px; margin-bottom: 4px; background: linear-gradient(135deg, #0F172A 0%, #334155 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-        {title}
-      </h2>
-      {"<p style='font-size: 15px; color: #64748B; font-weight: 400; max-width: 600px;'>" + subtitle + "</p>" if subtitle else ""}
-    </div>
-    """, unsafe_allow_html=True)
+def clean_text(text: str) -> str:
+    if not text:
+        return ""
 
-def render_chart_card(fig, st_instance):
-    fig.update_layout(
-        template="plotly_white",
-        height=450,
-        margin=dict(l=20, r=20, t=50, b=20),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family="Inter, sans-serif", color="#334155"),
-        title=dict(font=dict(size=18, color="#0F172A", family="Inter, sans-serif")),
-        modebar=dict(bgcolor='rgba(255, 255, 255, 0.8)', color="#64748B", activecolor="#4F46E5"),
-        hoverlabel=dict(bgcolor="white", font_size=13, font_family="Inter")
-    )
-    # Applying nice color palette to chart if it's not custom
-    fig.update_traces(marker=dict(line=dict(width=0)))
-    
-    st_instance.markdown(
-        '<div class="premium-card" style="margin-bottom: 24px; padding: 16px;">',
-        unsafe_allow_html=True
-    )
-    st_instance.plotly_chart(fig, use_container_width=True, config={'displaylogo': False})
-    st_instance.markdown('</div>', unsafe_allow_html=True)
+    text = unescape(str(text))
+    text = re.sub(r"</?[^>]+>", "", text)
+    text = re.sub(r"<div\s+style=\"?", "", text, flags=re.IGNORECASE)
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped in {'">', '"}', "</div>", "<div style=\"", "<div style="}:
+            continue
+        if stripped.lower().startswith("div style="):
+            continue
+        if re.match(r"^(background|padding|border-radius|max-width|font-size|line-height|color|border)\s*:", stripped):
+            continue
+        lines.append(stripped)
+    text = "\n".join(lines)
+    return text.strip()
+
 
 def render_user_bubble(message: str):
-    st.markdown(f"""
-    <div style="display: flex; justify-content: flex-end; margin-bottom: 24px;">
-      <div style="background: linear-gradient(135deg, #4F46E5 0%, #4338CA 100%); color: white; border-radius: 20px 20px 4px 20px; padding: 14px 20px; max-width: 80%; font-size: 15px; font-weight: 400; line-height: 1.6; box-shadow: 0 4px 14px 0 rgba(79, 70, 229, 0.25);">
-        {parse_markdown(message)}
-      </div>
-      <div style="width: 36px; height: 36px; border-radius: 50%; background: #E0E7FF; display: flex; align-items: center; justify-content: center; margin-left: 12px; color: #4338CA; font-weight: 700; font-size: 14px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); flex-shrink: 0;">
-        You
-      </div>
+    clean_msg = html.escape(clean_text(message)).replace("\n", "<br>")
+
+    st.markdown(
+        f"""
+    <div style="display:flex; justify-content:flex-end; margin-bottom:16px;">
+        <div style="
+            background: linear-gradient(135deg,#6366F1,#7C3AED);
+            color:#FFFFFF;
+            padding:10px 14px;
+            border-radius:18px 18px 4px 18px;
+            max-width:70%;
+            font-size:14px;
+            line-height:1.45;
+            box-shadow: 0 10px 24px rgba(99,102,241,0.24);
+        ">
+            {clean_msg}
+        </div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
+
 
 def render_assistant_bubble(message: str):
-    st.markdown(f"""
-    <div style="display: flex; align-items: flex-start; margin-bottom: 24px;">
-      <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #10B981 0%, #059669 100%); display: flex; align-items: center; justify-content: center; margin-right: 12px; color: white; font-weight: 700; font-size: 12px; box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3); flex-shrink: 0;">
-        AI
-      </div>
-      <div style="background: white; border: 1px solid #E2E8F0; border-radius: 4px 20px 20px 20px; padding: 16px 20px; max-width: 85%; font-size: 15px; color: #1E293B; line-height: 1.65; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);">
-        {parse_markdown(message)}
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    clean_msg = clean_text(message)
+    left, right = st.columns([0.06, 0.94])
+    with left:
+        st.markdown(
+            """
+            <div style="
+                width:36px;
+                height:36px;
+                border-radius:50%;
+                background: linear-gradient(135deg,#22C55E,#16A34A);
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                color:white;
+                font-size:11px;
+                font-weight:700;
+                box-shadow: 0 8px 20px rgba(34,197,94,0.25);
+                margin-top:2px;
+            ">AI</div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with right:
+        safe_msg = html.escape(clean_msg).replace("\n", "<br>")
+        st.markdown(
+            f"""
+            <div style="
+                background: rgba(15,23,42,0.96);
+                border: 1px solid rgba(148, 163, 184, 0.5);
+                border-radius: 14px;
+                padding: 10px 14px;
+                max-width: 78%;
+                font-size: 14px;
+                line-height: 1.5;
+                box-shadow: 0 14px 32px rgba(15,23,42,0.9);
+            ">
+                {safe_msg}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-def render_sidebar_dataset_badge(dataset_name: str, rows: int, cols: int):
-    st.sidebar.markdown(f"""
-    <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 16px; margin-bottom: 24px; backdrop-filter: blur(10px);">
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-         <div style="width: 8px; height: 8px; border-radius: 50%; background: #10B981; box-shadow: 0 0 8px #10B981;"></div>
-         <div style="color: #94A3B8; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;">
-            Active Dataset
-         </div>
-      </div>
-      <div style="color: white; font-weight: 600; font-size: 15px; margin-bottom: 8px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
-        {dataset_name}
-      </div>
-      <div style="display: flex; gap: 8px;">
-          <div style="background: rgba(59, 130, 246, 0.15); color: #60A5FA; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 500;">
-            {rows:,} rows
-          </div>
-          <div style="background: rgba(139, 92, 246, 0.15); color: #A78BFA; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 500;">
-            {cols} columns
-          </div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
 
-def render_insight_card(insight: str):
-    st.markdown(f"""
-    <div style="background: linear-gradient(to right, #EEF2FF, #F5F3FF); border-left: 4px solid #4F46E5; border-radius: 0 12px 12px 0; padding: 20px; margin: 16px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); position: relative; overflow: hidden;">
-      <!-- Shine effect -->
-      <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent); transform: skewX(-20deg) translateX(-150%); transition: transform 0.5s;" onmouseover="this.style.transform='skewX(-20deg) translateX(150%)';" onmouseout="setTimeout(() => this.style.transform='skewX(-20deg) translateX(-150%)', 500);"></div>
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-          <span style="font-size: 16px;">💡</span>
-          <div style="color: #4F46E5; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;">
-            Key AI Insight
-          </div>
-      </div>
-      <div style="color: #1E293B; font-size: 15px; line-height: 1.6; font-weight: 500; position: relative; z-index: 1;">
-        {parse_markdown(insight)}
-      </div>
+def render_kpi_cards(kpis):
+    if not kpis:
+        return
+
+    cols = st.columns(len(kpis))
+    for i, kpi in enumerate(kpis):
+        with cols[i]:
+            metric = kpi.get("metric", "")
+            total = kpi.get("total", "")
+            avg = kpi.get("average", "")
+            delta = float(kpi.get("delta", 0) or 0)
+            direction = "up" if delta >= 0 else "down"
+            arrow = "↑" if delta >= 0 else "↓"
+            trend_class = "positive" if delta >= 0 else "negative"
+            trend_label = kpi.get("trend_label", "from prior baseline")
+            st.markdown(
+                f"""
+                <div class="kpi-card glass-card">
+                  <div class="kpi-card__topline">
+                    <div class="kpi-card__label">{html.escape(str(metric))}</div>
+                    <div class="kpi-card__chip {trend_class}">
+                      <span>{arrow}</span>
+                      <span>{abs(delta):.1f}%</span>
+                    </div>
+                  </div>
+                  <div class="kpi-card__value">{html.escape(str(total))}</div>
+                  <div class="kpi-card__meta">Avg: {html.escape(str(avg))}</div>
+                  <div class="kpi-card__trend {trend_class}">
+                    {arrow} {abs(delta):.1f}% {html.escape(str(trend_label)).lower()}
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def render_section_header(title, subtitle=""):
+    st.markdown(f"### {title}")
+    if subtitle:
+        st.caption(subtitle)
+
+
+def _normalize_chart_payload(chart):
+    if isinstance(chart, dict) and chart.get("figure") is not None:
+        return chart
+    if isinstance(chart, go.Figure):
+        return {
+            "figure": chart,
+            "title": chart.layout.title.text if chart.layout.title else "Chart",
+            "rationale": "",
+            "summary": [],
+            "warnings": [],
+            "data": None,
+            "x_col": "",
+            "y_cols": [],
+            "chart_type": "chart",
+        }
+    return None
+
+
+def render_chart_card(chart, st_instance, key_prefix: str | None = None):
+    payload = _normalize_chart_payload(chart)
+    if not payload:
+        return
+
+    fig = payload["figure"]
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(15, 23, 42, 0)",
+        plot_bgcolor="rgba(15, 23, 42, 0)",
+        font=dict(color="#e6eefc", family="Segoe UI, sans-serif"),
+        title=dict(font=dict(color="#f8fbff", size=18)),
+        legend=dict(
+            bgcolor="rgba(15, 23, 42, 0.75)",
+            bordercolor="rgba(148, 163, 184, 0.12)",
+            borderwidth=1,
+        ),
+        margin=dict(l=20, r=20, t=48, b=20),
+        xaxis=dict(
+            gridcolor="rgba(148, 163, 184, 0.10)",
+            zerolinecolor="rgba(148, 163, 184, 0.12)",
+        ),
+        yaxis=dict(
+            gridcolor="rgba(148, 163, 184, 0.10)",
+            zerolinecolor="rgba(148, 163, 184, 0.12)",
+        ),
+    )
+    chart_key = key_prefix or re.sub(r"[^a-zA-Z0-9_]+", "_", payload.get("title", "chart"))
+    st_instance.plotly_chart(fig, use_container_width=True, key=f"{chart_key}_plot")
+
+    rationale = clean_text(payload.get("rationale", ""))
+    if rationale:
+        st_instance.caption(f"Why this chart: {rationale}")
+
+    for warning in payload.get("warnings", []):
+        st_instance.caption(clean_text(warning))
+
+    summary = payload.get("summary", []) or []
+    if summary:
+        st_instance.markdown("**Chart Summary**")
+        for item in summary:
+            st_instance.write(f"- {clean_text(item)}")
+
+    data = payload.get("data")
+    download_key = chart_key
+    if isinstance(data, pd.DataFrame) and not data.empty:
+        left, right = st_instance.columns(2)
+        with left:
+            st.download_button(
+                "Download Plot Data",
+                data=chart_download_bytes(payload),
+                file_name=f"{download_key}_plot_data.csv",
+                mime="text/csv",
+                key=f"{download_key}_csv",
+                use_container_width=True,
+            )
+        with right:
+            try:
+                image_bytes = fig.to_image(format="png", width=1200, height=700, scale=2)
+                st.download_button(
+                    "Download Chart PNG",
+                    data=image_bytes,
+                    file_name=f"{download_key}.png",
+                    mime="image/png",
+                    key=f"{download_key}_png",
+                    use_container_width=True,
+                )
+            except Exception:
+                st.caption("PNG export is unavailable in this environment.")
+
+    suggestion_items = build_graph_follow_up_suggestions(payload)
+    if suggestion_items:
+        st_instance.markdown("**Suggested Graphs**")
+        st_instance.caption("These prompts are the most likely to return chart-friendly results.")
+        for idx, item in enumerate(suggestion_items):
+            clean_q = clean_text(item["question"])
+            if st_instance.button(clean_q, key=f"{download_key}_graph_followup_chart_{idx}", use_container_width=True):
+                st.session_state.auto_query = clean_q
+                st.rerun()
+
+
+def render_sidebar_dataset_badge(name, rows, cols):
+    st.sidebar.markdown("### Active Dataset")
+
+    safe_name = html.escape(clean_text(name))
+    st.sidebar.markdown(
+        f"""
+    <div class="sidebar-dataset-card">
+        <div style="color:#E2E8F0; font-size:14px; font-weight:600;">
+            {safe_name}
+        </div>
+        <div class="sidebar-dataset-meta">{rows:,} rows | {cols} columns</div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
+
+    col1, col2 = st.sidebar.columns(2)
+
+    with col1:
+        st.metric("Rows", rows)
+
+    with col2:
+        st.metric("Columns", cols)
+
+
+def render_sidebar_question_inspiration(questions):
+    if not questions:
+        return None
+
+    st.sidebar.markdown("### Question Ideas")
+    clicked_question = None
+
+    with st.sidebar.container():
+        st.markdown(
+            """
+        <div style="
+            background: rgba(255,255,255,0.04);
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.08);
+            margin-top: 10px;
+            margin-bottom: 10px;
+        ">
+        """,
+            unsafe_allow_html=True,
+        )
+
+        for idx, question in enumerate(questions):
+            label = clean_text(question)
+            if st.button(label, key=f"sidebar_question_{idx}", use_container_width=True):
+                clicked_question = label
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    return clicked_question
+
+
+def render_insight_card(text):
+    st.info(clean_text(text))
+
+
+def render_result_status(title, body, kind="info"):
+    message = f"**{clean_text(title)}**\n\n{clean_text(body)}"
+    if kind == "warning":
+        st.warning(message)
+    elif kind == "success":
+        st.success(message)
+    else:
+        st.info(message)
+
+
+def render_structured_response(data: dict):
+    section_labels = {
+        "EXECUTIVE INSIGHT": "Executive Insight",
+        "KEY FINDINGS": "Key Findings",
+        "BUSINESS IMPACT": "Business Impact",
+        "LIMITATIONS": "Limitations",
+        "RECOMMENDATIONS": "Recommendations",
+    }
+
+    for section, points in data.items():
+        if not points:
+            continue
+
+        label = section_labels.get(section, section.title())
+        st.markdown(f"### {label}")
+
+        for point in points:
+            st.write(f"- {clean_text(point)}")
+
+        st.markdown("---")
+
+
+def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: int | None = None):
+    if dataframe is None:
+        return
+
+    working_df = dataframe.copy()
+    if working_df.empty:
+        st.info("No rows available for this view.")
+        return
+
+    safe_key = re.sub(r"[^a-zA-Z0-9_]+", "_", key)
+    st.markdown('<div class="glass-card table-panel">', unsafe_allow_html=True)
+    st.markdown(f"### {html.escape(title)}")
+
+    col_search, col_filter, col_sort = st.columns([1.5, 1, 1])
+    with col_search:
+        search_term = st.text_input("Search", placeholder="Search rows...", key=f"{safe_key}_search")
+    with col_filter:
+        filter_column = st.selectbox("Filter column", ["All columns"] + list(working_df.columns), key=f"{safe_key}_filter_col")
+    with col_sort:
+        sort_column = st.selectbox("Sort by", ["Original order"] + list(working_df.columns), key=f"{safe_key}_sort_col")
+
+    if search_term:
+        term = search_term.lower()
+        mask = working_df.astype(str).apply(lambda col: col.str.lower().str.contains(term, na=False))
+        working_df = working_df[mask.any(axis=1)]
+
+    if filter_column != "All columns":
+        raw_values = [str(value) for value in working_df[filter_column].dropna().unique().tolist()]
+        options = ["All"] + sorted(raw_values)[:100]
+        selected_value = st.selectbox("Filter value", options, key=f"{safe_key}_filter_val")
+        if selected_value != "All":
+            working_df = working_df[working_df[filter_column].astype(str) == selected_value]
+
+    if sort_column != "Original order":
+        ascending = st.toggle("Ascending", value=False, key=f"{safe_key}_ascending")
+        try:
+            working_df = working_df.sort_values(by=sort_column, ascending=ascending, kind="stable")
+        except Exception:
+            pass
+
+    if max_rows is not None and len(working_df) > max_rows:
+        st.caption(f"Showing first {max_rows:,} of {len(working_df):,} rows after filters.")
+        working_df = working_df.head(max_rows)
+    else:
+        st.caption(f"{len(working_df):,} rows shown")
+
+    display_df = working_df.fillna("—").copy()
+    display_df.columns = [html.escape(str(col)) for col in display_df.columns]
+
+    rows_html = []
+    for row_index, (_, row) in enumerate(display_df.iterrows()):
+        cells = []
+        for value in row.tolist():
+            cell_value = html.escape(str(value))
+            cells.append(f"<td>{cell_value}</td>")
+        row_class = "even" if row_index % 2 else "odd"
+        rows_html.append(f"<tr class='{row_class}'>{''.join(cells)}</tr>")
+
+    header_html = "".join(f"<th>{col}</th>" for col in display_df.columns)
+    table_html = f"""
+    <div class="dark-table-wrap">
+        <table class="dark-table">
+            <thead>
+                <tr>{header_html}</tr>
+            </thead>
+            <tbody>
+                {''.join(rows_html)}
+            </tbody>
+        </table>
+    </div>
+    """
+
+    st.markdown(table_html, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)

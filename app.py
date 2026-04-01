@@ -30,7 +30,7 @@ from modules.forecasting import forecast_revenue
 from modules.ai_conversation import generate_conversational_response, generate_error_response
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 api_key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY", None)
 
 if not api_key:
@@ -142,12 +142,12 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 # ---------- TAB 1: DATA OVERVIEW ----------
 with tab1:
-    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
+    st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     st.subheader("Dataset Preview")
     st.dataframe(df.head(20), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
+    st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     st.subheader("Column Details")
     col_info = pd.DataFrame({
         "Column": df.columns,
@@ -160,12 +160,12 @@ with tab1:
     st.dataframe(col_info, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
+    st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     st.subheader("Statistics")
     st.dataframe(df.describe(), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
+    st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     st.subheader("🔎 Automatic Dataset Insights")
     auto_insights = generate_auto_insights(df)
     for insight in auto_insights:
@@ -215,7 +215,7 @@ with tab2:
             # Chart Data
             chart_data = entry.get("chart_data")
             if chart_data is not None:
-                st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
+                st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
                 st.markdown("**📋 Data Table**")
                 st.dataframe(chart_data, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -232,7 +232,7 @@ with tab2:
             else:
                 result = entry.get("result")
                 if isinstance(result, dict):
-                    st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
+                    st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
                     for key, value in result.items():
                         try:
                             if "<Axes:" in str(value) or "<AxesSubplot" in str(value):
@@ -249,7 +249,7 @@ with tab2:
                     st.markdown('</div>', unsafe_allow_html=True)
                 elif not entry.get("ai_response"):
                     if str(result) != "None":
-                        st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
+                        st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
                         st.write(str(result))
                         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -321,7 +321,7 @@ with tab2:
             st.code(code, language="python")
 
         if chart_data is not None:
-            st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
+            st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
             st.markdown("**📋 Data Table**")
             st.dataframe(chart_data, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -351,7 +351,7 @@ with tab2:
         else:
             if isinstance(result, dict):
                 has_displayable = False
-                st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
+                st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
                 for key, value in result.items():
                     try:
                         if "<Axes:" in str(value) or "<AxesSubplot" in str(value):
@@ -370,7 +370,7 @@ with tab2:
                 if not has_displayable and not ai_response:
                     st.info("The AI analyzed the data but the result format couldn't be displayed as a table.")
             elif not ai_response and str(result) != "None":
-                st.markdown('<div class="premium-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
+                st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
                 st.write(str(result))
                 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -425,7 +425,7 @@ with tab2:
 # ---------- TAB 3: FORECASTING ----------
 with tab3:
     render_section_header("🔮 Revenue / Sales Forecasting", "Predict future trends based on historical data patterns.")
-    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
+    st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 24px;">', unsafe_allow_html=True)
     
     forecast_periods = st.slider("Forecast periods (months):", min_value=1, max_value=12, value=3)
 
@@ -468,9 +468,9 @@ with tab3:
 
 # ---------- TAB 4: REPORTS ----------
 with tab4:
-    st.markdown('<div class="premium-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
-    st.markdown("<h3 style='color: #1E293B; margin-bottom: 0px;'>📑 Executive Report Generator</h3>", unsafe_allow_html=True)
-    st.markdown("<p style='color: #64748B; font-size: 14px;'>Compile your entire AI analysis session into a branded, professional PDF report.</p>", unsafe_allow_html=True)
+    st.markdown('<div class="glass-card animate-slide" style="margin-bottom: 24px;">', unsafe_allow_html=True)
+    st.markdown("<h3 style='color: #f8fbff; margin-bottom: 0px;'>📑 Executive Report Generator</h3>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #a8bad8; font-size: 14px;'>Compile your entire AI analysis session into a branded, professional PDF report.</p>", unsafe_allow_html=True)
     st.markdown("<hr style='margin-top: 5px; margin-bottom: 25px;'>", unsafe_allow_html=True)
 
     history = st.session_state.get("analysis_history", [])
@@ -485,23 +485,23 @@ with tab4:
             st.write("The following queries will be included as dedicated sections in your PDF report:")
             for i, entry in enumerate(history, 1):
                 st.markdown(f'''
-                <div style="background: #F8FAFC; border-left: 4px solid #F59E0B; padding: 12px 16px; margin-bottom: 12px; border-radius: 4px; border: 1px solid #E2E8F0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                    <div style="color: #64748B; font-size: 11px; font-weight: bold; margin-bottom: 4px;">ANALYSIS #{i}</div>
-                    <div style="color: #1E293B; font-weight: 600; font-size: 15px;">"{entry['query']}"</div>
+                <div style="background: rgba(255,255,255,0.04); border-left: 4px solid #F59E0B; padding: 12px 16px; margin-bottom: 12px; border-radius: 4px; border: 1px solid #E2E8F0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <div style="color: #a8bad8; font-size: 11px; font-weight: bold; margin-bottom: 4px;">ANALYSIS #{i}</div>
+                    <div style="color: #f8fbff; font-weight: 600; font-size: 15px;">"{entry['query']}"</div>
                 </div>
                 ''', unsafe_allow_html=True)
 
         with col2:
             st.markdown("#### ⚙️ Report Configuration")
             st.markdown("""
-            <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #E2E8F0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="background: rgba(255,255,255,0.04); padding: 20px; border-radius: 8px; border: 1px solid #E2E8F0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
                 <div style="margin-bottom: 15px;">
-                    <div style="font-weight: 600; color: #1E293B;">Document Type</div>
-                    <div style="color: #64748B; font-size: 13px;">Executive PDF Briefing</div>
+                    <div style="font-weight: 600; color: #f8fbff;">Document Type</div>
+                    <div style="color: #a8bad8; font-size: 13px;">Executive PDF Briefing</div>
                 </div>
                 <div style="margin-bottom: 15px;">
-                    <div style="font-weight: 600; color: #1E293B;">Included Features</div>
-                    <ul style="color: #64748B; font-size: 13px; padding-left: 20px; margin-top: 5px;">
+                    <div style="font-weight: 600; color: #f8fbff;">Included Features</div>
+                    <ul style="color: #a8bad8; font-size: 13px; padding-left: 20px; margin-top: 5px;">
                         <li>Cover Page & Table of Contents</li>
                         <li>High-Resolution Visualizations</li>
                         <li>Formatted Data Tables</li>
