@@ -1,0 +1,6 @@
+﻿kaif	https://github.com/Mohammedkaif2003/ai_business_intelligence_assistant.git (fetch)
+kaif	https://github.com/Mohammedkaif2003/ai_business_intelligence_assistant.git (push)
+origin	https://github.com/Mohammedkaif2003/Mohammedkaif2003-ai_business_intelligence_assistant.git (fetch)
+origin	https://github.com/Mohammedkaif2003/Mohammedkaif2003-ai_business_intelligence_assistant.git (push)
+wajid	https://github.com/AbdulWajid0/campany_data_analyst_ai.git (fetch)
+wajid	https://github.com/AbdulWajid0/campany_data_analyst_ai.git (push)
