@@ -12,7 +12,7 @@ def analyze_dataset(df):
 
     # Detect column types safely
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
-    categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    categorical_cols = df.select_dtypes(include=["object", "category", "string"]).columns.tolist()
     datetime_cols = df.select_dtypes(include=["datetime", "datetime64"]).columns.tolist()
 
     info["numeric_columns"] = numeric_cols

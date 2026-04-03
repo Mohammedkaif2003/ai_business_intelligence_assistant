@@ -147,7 +147,7 @@ def validate_chart_data(data: Any) -> tuple[pd.DataFrame | None, list[str]]:
 
 def _prepare_dimension_columns(df: pd.DataFrame) -> tuple[list[str], list[str]]:
     datetime_cols = _find_datetime_columns(df)
-    categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    categorical_cols = df.select_dtypes(include=["object", "category", "string"]).columns.tolist()
     categorical_cols = [col for col in categorical_cols if df[col].nunique(dropna=True) > 0]
     return datetime_cols, categorical_cols
 
@@ -408,7 +408,7 @@ def build_graph_follow_up_suggestions(chart: dict) -> list[dict]:
 
     datetime_cols = _find_datetime_columns(df.copy()) if not df.empty else []
     numeric_cols = df.select_dtypes(include="number").columns.tolist() if not df.empty else []
-    categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist() if not df.empty else []
+    categorical_cols = df.select_dtypes(include=["object", "category", "string"]).columns.tolist() if not df.empty else []
     alternate_categories = [col for col in categorical_cols if col != x_col]
     secondary_metric = next((col for col in numeric_cols if col != primary_metric), None)
 

@@ -21,9 +21,12 @@ def forecast_revenue(df, periods=3):
     }
     logger.info("Starting forecast generation for %s rows and %s periods", len(df), periods)
 
+    # Work on a copy to avoid mutating caller-owned DataFrames.
+    working_df = df.copy()
+
     # Detect date column
     date_col = None
-    for col in df.columns:
+    for col in working_df.columns:
         col_lower = col.lower()
         if col_lower in ["date", "order date", "transaction date"]:
             date_col = col
@@ -34,13 +37,13 @@ def forecast_revenue(df, periods=3):
 
     if date_col is None:
         # Try year_month or year+month
-        if "Year Month" in df.columns or "Year_Month" in df.columns:
-            date_col = "Year Month" if "Year Month" in df.columns else "Year_Month"
-        elif "Year" in df.columns and "Month" in df.columns:
-            df["_forecast_date"] = pd.to_datetime(
-                df["Year"].astype(str)
+        if "Year Month" in working_df.columns or "Year_Month" in working_df.columns:
+            date_col = "Year Month" if "Year Month" in working_df.columns else "Year_Month"
+        elif "Year" in working_df.columns and "Month" in working_df.columns:
+            working_df["_forecast_date"] = pd.to_datetime(
+                working_df["Year"].astype(str)
                 + "-"
-                + df["Month"].astype(str).str.zfill(2)
+                + working_df["Month"].astype(str).str.zfill(2)
                 + "-01"
             )
             date_col = "_forecast_date"
@@ -55,14 +58,14 @@ def forecast_revenue(df, periods=3):
 
     # Detect revenue/numeric column
     metric_col = None
-    for col in df.columns:
+    for col in working_df.columns:
         col_lower = col.lower()
         if col_lower in ["revenue", "sales", "total sales", "profit", "amount"]:
             metric_col = col
             break
 
     if metric_col is None:
-        numeric_cols = df.select_dtypes(include="number").columns.tolist()
+        numeric_cols = working_df.select_dtypes(include="number").columns.tolist()
         if numeric_cols:
             metric_col = numeric_cols[0]
         else:
@@ -75,11 +78,11 @@ def forecast_revenue(df, periods=3):
 
     try:
         # Ensure date is datetime
-        if df[date_col].dtype == "object":
-            df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        if working_df[date_col].dtype == "object":
+            working_df[date_col] = pd.to_datetime(working_df[date_col], errors="coerce")
 
         # Aggregate by month
-        monthly = df.set_index(date_col).resample("ME")[metric_col].sum().reset_index()
+        monthly = working_df.set_index(date_col).resample("ME")[metric_col].sum().reset_index()
         monthly.columns = ["Date", "Value"]
         monthly = monthly.dropna()
 

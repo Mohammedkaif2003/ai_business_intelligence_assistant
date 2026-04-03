@@ -42,14 +42,14 @@ def render_user_bubble(message: str):
         f"""
     <div style="display:flex; justify-content:flex-end; margin-bottom:16px;">
         <div style="
-            background: linear-gradient(135deg,#6366F1,#7C3AED);
+            background: linear-gradient(135deg,#4F46E5,#7C3AED);
             color:#FFFFFF;
             padding:10px 14px;
             border-radius:18px 18px 4px 18px;
             max-width:70%;
             font-size:14px;
             line-height:1.45;
-            box-shadow: 0 10px 24px rgba(99,102,241,0.24);
+            box-shadow: 0 10px 24px rgba(79,70,229,0.28);
         ">
             {clean_msg}
         </div>
@@ -260,13 +260,27 @@ def render_sidebar_dataset_badge(name, rows, cols):
         unsafe_allow_html=True,
     )
 
-    col1, col2 = st.sidebar.columns(2)
 
-    with col1:
-        st.metric("Rows", rows)
-
-    with col2:
-        st.metric("Columns", cols)
+def render_sidebar_branding(app_title: str, app_icon: str, subtitle: str = "AI Intelligence Suite"):
+    st.sidebar.markdown(
+        f"""
+    <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); padding: 24px 20px; border-radius: 16px; margin-bottom: 24px; backdrop-filter: blur(10px); position: relative; overflow: hidden;">
+        <div style="position: absolute; top: -50%; right: -20%; width: 120px; height: 120px; background: radial-gradient(circle, #6366F1 0%, transparent 70%); opacity: 0.45;"></div>
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px; position: relative; z-index: 1;">
+            <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 4px 10px rgba(79, 70, 229, 0.32);">
+                {html.escape(str(app_icon))}
+            </div>
+            <div style="font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">
+                {html.escape(str(app_title))}
+            </div>
+        </div>
+        <div style="color: #94A3B8; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-left: 48px; position: relative; z-index: 1;">
+            {html.escape(str(subtitle))}
+        </div>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_sidebar_question_inspiration(questions):
@@ -364,11 +378,24 @@ def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: 
         working_df = working_df[mask.any(axis=1)]
 
     if filter_column != "All columns":
-        raw_values = [str(value) for value in working_df[filter_column].dropna().unique().tolist()]
-        options = ["All"] + sorted(raw_values)[:100]
-        selected_value = st.selectbox("Filter value", options, key=f"{safe_key}_filter_val")
-        if selected_value != "All":
-            working_df = working_df[working_df[filter_column].astype(str) == selected_value]
+        filter_series = working_df[filter_column].dropna()
+        unique_values = filter_series.unique().tolist()
+
+        if pd.api.types.is_numeric_dtype(filter_series):
+            sorted_values = sorted(unique_values)
+        else:
+            sorted_values = sorted(unique_values, key=lambda value: str(value).lower())
+
+        value_options = [None] + sorted_values[:100]
+        selected_value = st.selectbox(
+            "Filter value",
+            value_options,
+            format_func=lambda value: "All" if value is None else str(value),
+            key=f"{safe_key}_filter_val",
+        )
+
+        if selected_value is not None:
+            working_df = working_df[working_df[filter_column] == selected_value]
 
     if sort_column != "Original order":
         ascending = st.toggle("Ascending", value=False, key=f"{safe_key}_ascending")

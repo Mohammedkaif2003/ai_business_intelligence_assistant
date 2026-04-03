@@ -59,3 +59,19 @@ def test_forecast_revenue_fails_without_numeric_metric():
     assert result["available"] is False
     assert "numeric metric" in result["message"].lower()
 
+
+def test_forecast_revenue_does_not_mutate_input_dataframe_columns():
+    df = pd.DataFrame(
+        {
+            "Year": [2024, 2024, 2024, 2024],
+            "Month": [1, 2, 3, 4],
+            "Sales": [10, 20, 30, 40],
+        }
+    )
+    original_columns = df.columns.tolist()
+
+    _ = forecast_revenue(df, periods=2)
+
+    assert df.columns.tolist() == original_columns
+    assert "_forecast_date" not in df.columns
+

@@ -72,8 +72,7 @@ def generate_business_insight(data):
             )
 
     # ---------------- PERFORMANCE GAP ----------------
-    if bottom_row[metric] != 0:
-
+    if top_row[metric] > 0 and bottom_row[metric] > 0:
         gap = top_row[metric] / bottom_row[metric]
 
         if gap > 4:

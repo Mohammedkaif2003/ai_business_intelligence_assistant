@@ -451,7 +451,7 @@ def generate_recommendations(dataframe):
         return recommendations
 
     numeric_cols = dataframe.select_dtypes(include="number").columns.tolist()
-    cat_cols = dataframe.select_dtypes(include=["object", "category"]).columns.tolist()
+    cat_cols = dataframe.select_dtypes(include=["object", "category", "string"]).columns.tolist()
 
     if numeric_cols and cat_cols:
         metric = numeric_cols[0]

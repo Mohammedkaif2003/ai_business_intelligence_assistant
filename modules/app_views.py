@@ -1,3 +1,4 @@
+import re
 import html
 
 import pandas as pd
@@ -21,42 +22,56 @@ def init_analysis_state():
     ensure_analysis_state()
 
 
-def _generate_quick_prompts(df: pd.DataFrame, schema: dict | None = None) -> list[str]:
+def _format_dataset_label(dataset_name: str | None) -> str:
+    if not dataset_name:
+        return "this dataset"
+
+    dataset_label = re.sub(r"\.[^.]+$", "", str(dataset_name))
+    dataset_label = re.sub(r"[_-]+", " ", dataset_label).strip()
+    return dataset_label.title() if dataset_label else "this dataset"
+
+
+def _generate_quick_prompts(
+    df: pd.DataFrame,
+    schema: dict | None = None,
+    dataset_name: str | None = None,
+) -> list[str]:
     schema = schema or {}
     numeric_cols = schema.get("numeric_columns", []) or df.select_dtypes(include="number").columns.tolist()
     categorical_cols = schema.get("categorical_columns", []) or df.select_dtypes(exclude="number").columns.tolist()
     datetime_cols = schema.get("datetime_columns", [])
+    dataset_label = _format_dataset_label(dataset_name)
 
     prompts: list[str] = []
 
     if categorical_cols and numeric_cols:
-        prompts.append(f"Top 5 {categorical_cols[0]} by {numeric_cols[0]}")
+        prompts.append(f"In {dataset_label}, what are the top 5 {categorical_cols[0]} by {numeric_cols[0]}?")
 
     if datetime_cols and numeric_cols:
-        prompts.append(f"{numeric_cols[0]} trend over time")
+        prompts.append(f"In {dataset_label}, what is the {numeric_cols[0]} trend over time?")
     elif "Date" in df.columns and numeric_cols:
-        prompts.append(f"{numeric_cols[0]} trend over time")
+        prompts.append(f"In {dataset_label}, what is the {numeric_cols[0]} trend over time?")
     elif len(numeric_cols) >= 2:
-        prompts.append(f"Compare {numeric_cols[0]} with {numeric_cols[1]}")
+        prompts.append(f"In {dataset_label}, compare {numeric_cols[0]} with {numeric_cols[1]}.")
 
     if len(categorical_cols) >= 2 and numeric_cols:
-        prompts.append(f"{numeric_cols[0]} by {categorical_cols[1]}")
+        prompts.append(f"In {dataset_label}, show {numeric_cols[0]} by {categorical_cols[1]}.")
     elif categorical_cols and numeric_cols:
-        prompts.append(f"{numeric_cols[0]} by {categorical_cols[0]}")
+        prompts.append(f"In {dataset_label}, show {numeric_cols[0]} by {categorical_cols[0]}.")
 
     if not prompts and numeric_cols:
         prompts.extend([
-            f"Average {numeric_cols[0]}",
-            f"Highest {numeric_cols[0]}",
-            f"Summary of {numeric_cols[0]}",
+            f"In {dataset_label}, what is the average {numeric_cols[0]}?",
+            f"In {dataset_label}, what is the highest {numeric_cols[0]}?",
+            f"In {dataset_label}, summarize {numeric_cols[0]}.",
         ])
 
     if not prompts:
         columns = schema.get("column_names", [])[:3] or df.columns.tolist()[:3]
         prompts.extend([
-            f"Summarize {columns[0]}",
-            f"Show records by {columns[0]}",
-            f"Dataset overview",
+            f"In {dataset_label}, summarize {columns[0]}",
+            f"In {dataset_label}, show records by {columns[0]}",
+            f"Give an overview of {dataset_label}",
         ])
 
     deduped = []
@@ -69,10 +84,10 @@ def _generate_quick_prompts(df: pd.DataFrame, schema: dict | None = None) -> lis
     return deduped[:3]
 
 
-def render_quick_prompt_buttons(df: pd.DataFrame, schema: dict | None = None):
+def render_quick_prompt_buttons(df: pd.DataFrame, schema: dict | None = None, dataset_name: str | None = None):
     st.markdown("##### Quick Prompts")
     prompt_cols = st.columns(3)
-    quick_prompts = _generate_quick_prompts(df, schema)
+    quick_prompts = _generate_quick_prompts(df, schema, dataset_name)
     for idx, prompt in enumerate(quick_prompts):
         with prompt_cols[idx]:
             if st.button(prompt, key=f"starter_prompt_{idx}", use_container_width=True):
@@ -144,8 +159,10 @@ def render_follow_up_section(raw_suggestions: str, key_prefix: str):
     if not raw_suggestions:
         return
 
+    st.markdown('<div class="ai-theme-box">', unsafe_allow_html=True)
     with st.expander("Suggested Follow-Up Questions", expanded=False):
         render_follow_up_buttons(raw_suggestions, key_prefix)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_chat_history_entry(entry: dict):

@@ -24,3 +24,17 @@ def test_generate_auto_insights_empty_dataframe():
     df = pd.DataFrame(columns=["Region", "Revenue"])
     assert generate_auto_insights(df) == []
 
+
+def test_generate_auto_insights_handles_zero_group_total_without_crash():
+    df = pd.DataFrame(
+        {
+            "Region": ["North", "South"],
+            "Revenue": [0, 0],
+        }
+    )
+
+    insights = generate_auto_insights(df)
+
+    assert len(insights) >= 1
+    assert any("total Revenue is zero" in s for s in insights)
+

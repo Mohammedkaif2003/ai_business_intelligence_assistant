@@ -9,7 +9,7 @@ def generate_auto_insights(df):
         return insights
 
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
-    cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    cat_cols = df.select_dtypes(include=["object", "category", "string"]).columns.tolist()
 
     # ---------- TOP CONTRIBUTOR ----------
     if numeric_cols and cat_cols:
@@ -17,21 +17,28 @@ def generate_auto_insights(df):
         metric = numeric_cols[0]
         category = cat_cols[0]
 
-        grouped = df.groupby(category)[metric].sum().sort_values(ascending=False)
+        grouped = df.groupby(category, dropna=False)[metric].sum().sort_values(ascending=False)
+        grouped = grouped.dropna()
 
-        top = grouped.index[0]
-        share = (grouped.iloc[0] / grouped.sum()) * 100
+        if not grouped.empty:
+            top = grouped.index[0]
+            total_grouped = grouped.sum()
+            if total_grouped != 0:
+                share = (grouped.iloc[0] / total_grouped) * 100
+                insights.append(
+                    f"{top} contributes {share:.1f}% of total {metric}."
+                )
+            else:
+                insights.append(
+                    f"{top} has the highest {metric}, but total {metric} is zero across categories."
+                )
 
-        insights.append(
-            f"{top} contributes {share:.1f}% of total {metric}."
-        )
-
-        # Bottom performer
-        if len(grouped) > 1:
-            bottom = grouped.index[-1]
-            insights.append(
-                f"{bottom} has the lowest contribution in {metric}."
-            )
+            # Bottom performer
+            if len(grouped) > 1:
+                bottom = grouped.index[-1]
+                insights.append(
+                    f"{bottom} has the lowest contribution in {metric}."
+                )
 
     # ---------- MAX / MIN VALUE ----------
     if numeric_cols:
