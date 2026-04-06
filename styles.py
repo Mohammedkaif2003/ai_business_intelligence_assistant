@@ -1265,7 +1265,18 @@ textarea::placeholder {
     border: 1px solid rgba(224, 231, 255, 0.65) !important;
     color: #ffffff !important;
     font-weight: 700 !important;
-    min-height: 42px !important;
+    min-height: 38px !important;
+    min-width: 38px !important;
+    width: auto !important;
+    padding: 0 14px !important;
+    border-radius: 999px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    line-height: 1 !important;
+    box-shadow: 0 10px 18px rgba(79, 70, 229, 0.24) !important;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease !important;
 }
 
 [data-testid="stSidebar"] [data-testid="stFileUploader"] button:hover,
@@ -1273,6 +1284,27 @@ textarea::placeholder {
     background: linear-gradient(135deg, #7c83ff, #8b5cf6) !important;
     border-color: rgba(224, 231, 255, 0.9) !important;
     filter: saturate(1.08);
+    transform: translateY(-1px);
+    box-shadow: 0 14px 24px rgba(79, 70, 229, 0.3) !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button:active,
+[data-testid="stSidebar"] [data-testid="stFileUploader"] div[role="button"]:active {
+    transform: translateY(0) scale(0.98);
+    box-shadow: 0 8px 16px rgba(79, 70, 229, 0.2) !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button:focus-visible,
+[data-testid="stSidebar"] [data-testid="stFileUploader"] div[role="button"]:focus-visible {
+    outline: 2px solid rgba(224, 231, 255, 0.95) !important;
+    outline-offset: 2px !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button svg,
+[data-testid="stSidebar"] [data-testid="stFileUploader"] div[role="button"] svg {
+    width: 15px !important;
+    height: 15px !important;
+    flex-shrink: 0;
 }
 
 @keyframes uploaderGlowPulse {
