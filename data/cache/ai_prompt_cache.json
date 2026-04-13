@@ -330,84 +330,159 @@
         "insight": "",
         "last_api_call_ts": 1776077420.002785,
         "status": "error"
-      }
-    },
-    "chat_history": [
-      {
-        "query": "What is the average Budget by Department?",
-        "result": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
+      },
+      "45409e89353fc276ebcae9da5e5e7d42cfb5a128": {
+        "intent": "analyze variance",
+        "query_rejected": false,
+        "ai_response": "To determine the primary drivers of budget variance, analyze the 'Variance' and 'Variance Pct' columns by 'Department'",
+        "summary_list": [
+          "A",
+          "n",
+          "a",
+          "l",
+          "y"
+        ],
+        "suggestions": "1. What is the average variance for each department?\n2. Which department has the highest variance percentage?",
+        "rephrases": [],
+        "result": "To determine the primary drivers of budget variance, analyze the 'Variance' and 'Variance Pct' columns by 'Department'",
+        "structured_response": {
+          "EXECUTIVE INSIGHT": [
+            "V",
+            "a",
+            "r",
+            "i",
+            "a"
+          ],
+          "KEY FINDINGS": [
+            "T",
+            "h",
+            "e",
+            "'",
+            "V"
+          ],
+          "BUSINESS IMPACT": [
+            "U",
+            "n",
+            "d",
+            "e",
+            "r"
+          ],
+          "RECOMMENDED NEXT STEPS": [
+            "R",
+            "u",
+            "n",
+            "a",
+            "r"
+          ],
+          "LIMITATIONS": [
+            "T",
+            "h",
+            "e",
+            "a",
+            "n"
+          ]
+        },
+        "confidence": 0.8,
+        "source_columns": [
+          "Department",
+          "Variance",
+          "Variance Pct"
+        ],
         "code": "# single-call chat pipeline",
         "chart_data": null,
+        "chart_figs": [],
         "insight": "",
-        "summary": [
-          "The average budget across all departments is approximately $503,419",
-          "Marketing and HR have the highest average budgets",
-          "Informed budget allocation can lead to more efficient use of resources"
-        ],
-        "charts": [],
-        "ai_response": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
-        "suggestions": "1. What are the primary drivers of budget variance across departments?\n2. How do departmental budgets impact overall organizational performance?",
+        "last_api_call_ts": 1776084795.0833626,
+        "status": "ok"
+      },
+      "7a02dd55c6e7b234fbe72169bbafbfd654246b31": {
+        "intent": "analyze variance by department",
         "query_rejected": false,
+        "ai_response": "To find the average variance for each department, we will group the 'finance_data.csv' dataset by 'Department' and calculate the mean of the 'Variance' column.",
+        "summary_list": [
+          "C",
+          "a",
+          "l",
+          "c",
+          "u"
+        ],
+        "suggestions": "1. What is the average variance for the Engineering department?\n2. How does the average variance for the Sales department compare to other departments?",
+        "rephrases": [],
+        "result": "To find the average variance for each department, we will group the 'finance_data.csv' dataset by 'Department' and calculate the mean of the 'Variance' column.",
+        "structured_response": {
+          "EXECUTIVE INSIGHT": [
+            "T",
+            "h",
+            "e",
+            "a",
+            "v"
+          ],
+          "KEY FINDINGS": [
+            "T",
+            "o",
+            "d",
+            "e",
+            "t"
+          ],
+          "BUSINESS IMPACT": [
+            "U",
+            "n",
+            "d",
+            "e",
+            "r"
+          ],
+          "RECOMMENDED NEXT STEPS": [
+            "C",
+            "o",
+            "m",
+            "p",
+            "a"
+          ],
+          "LIMITATIONS": [
+            "T",
+            "h",
+            "i",
+            "s",
+            "a"
+          ]
+        },
         "confidence": 0.9,
         "source_columns": [
           "Department",
-          "Budget"
+          "Variance"
         ],
-        "intent": "analysis",
-        "rephrases": []
-      }
-    ],
-    "analysis_history": [
-      {
-        "query": "What is the average Budget by Department?",
-        "result": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
         "code": "# single-call chat pipeline",
-        "insight": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
-        "ai_response": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
-        "charts": [],
-        "summary": [
-          "The average budget across all departments is approximately $503,419",
-          "Marketing and HR have the highest average budgets",
-          "Informed budget allocation can lead to more efficient use of resources"
-        ],
-        "intent": "analysis",
-        "confidence": 0.9,
-        "source_columns": [
-          "Department",
-          "Budget"
-        ]
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776084813.6163402,
+        "status": "ok"
       }
-    ],
-    "result_history": [
-      "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets"
-    ],
-    "result_history_details": [
-      {
-        "query": "What is the average Budget by Department?",
-        "intent": "analysis",
-        "result_type": "text",
-        "key_columns": [],
-        "chartable": false,
-        "result_shape": null,
-        "query_rejected": false
-      }
-    ],
+    },
+    "chat_history": [],
+    "analysis_history": [],
+    "result_history": [],
+    "result_history_details": [],
     "recent_activity": [
       {
         "kind": "question",
+        "description": "What is the top Department by Variance in the current Quarter?"
+      },
+      {
+        "kind": "question",
+        "description": "What is the top Department by Variance in the current Quarter?"
+      },
+      {
+        "kind": "question",
+        "description": "What is the average variance for each department?"
+      },
+      {
+        "kind": "question",
+        "description": "What are the primary drivers of budget variance across departments?"
+      },
+      {
+        "kind": "question",
         "description": "What is the average Budget by Department?"
-      },
-      {
-        "kind": "question",
-        "description": "How does the actual spending of the identified department compare to the average actual spending of all departments?"
-      },
-      {
-        "kind": "question",
-        "description": "Which Department has the highest Actual spending in the most recent Year?"
-      },
-      {
-        "kind": "question",
-        "description": "How can the organization improve financial forecasting to reduce the difference between budget and actual?"
       },
       {
         "kind": "question",
@@ -415,27 +490,14 @@
       },
       {
         "kind": "question",
-        "description": "How does the actual spending of the identified department compare to the average actual spending of all departments?"
-      },
-      {
-        "kind": "question",
         "description": "Which Department has the highest Actual spending in the most recent Year?"
       },
       {
         "kind": "question",
-        "description": "Which Department has the highest Actual spending in the most recent Year?"
+        "description": "What is the average Budget by Department?"
       }
     ],
-    "messages": [
-      {
-        "role": "user",
-        "content": "What is the average Budget by Department?"
-      },
-      {
-        "role": "assistant",
-        "content": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets"
-      }
-    ]
+    "messages": []
   },
   "demo-provenance": {
     "chat_history": [

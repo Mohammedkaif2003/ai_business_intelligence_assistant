@@ -1,11 +1,11 @@
 import re
 import html
-import time
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from modules.chat_queue import queue_query
 from modules.text_utils import clean_text, structure_response
 from modules.query_utils import extract_follow_up_questions
 from modules.app_state import ensure_analysis_state
@@ -17,15 +17,6 @@ from ui_components import (
     render_table_panel,
     render_user_bubble,
 )
-
-
-def _queue_query(query_text: str):
-    cleaned = str(query_text or "").strip()
-    if not cleaned:
-        return
-    st.session_state["pending_query"] = cleaned
-    st.session_state["pending_query_id"] = str(time.time_ns())
-    st.session_state["active_page"] = "chat"
 
 
 def init_analysis_state():
@@ -101,7 +92,7 @@ def render_quick_prompt_buttons(df: pd.DataFrame, schema: dict | None = None, da
     for idx, prompt in enumerate(quick_prompts):
         with prompt_cols[idx]:
             if st.button(prompt, key=f"starter_prompt_{idx}", width="stretch"):
-                _queue_query(prompt)
+                queue_query(prompt)
 
 
 def render_chart_collection(charts):
@@ -158,7 +149,7 @@ def render_follow_up_buttons(raw_suggestions: str, key_prefix: str):
     for q in parsed_questions:
         clean_q = clean_text(q).replace("`", "")
         if st.button(clean_q, key=f"{key_prefix}_{clean_q}", width="stretch"):
-            _queue_query(clean_q)
+            queue_query(clean_q)
     if not parsed_questions:
         st.caption("No follow-up questions available.")
 
@@ -231,4 +222,4 @@ def render_chat_history_entry(entry: dict):
         st.markdown("**Suggested Rephrases**")
         for idx, suggestion in enumerate(entry["rephrases"]):
             if st.button(suggestion, key=f"history_rephrase_{id(entry)}_{idx}", width="stretch"):
-                _queue_query(suggestion)
+                queue_query(suggestion)

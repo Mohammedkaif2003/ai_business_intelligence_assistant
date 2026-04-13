@@ -36,6 +36,18 @@ def structure_response(text: str) -> dict:
         "RECOMMENDATIONS": [],
     }
 
+    alias_map = {
+        "EXECUTIVE SUMMARY": "EXECUTIVE INSIGHT",
+        "SUMMARY": "EXECUTIVE INSIGHT",
+        "KEY TAKEAWAYS": "KEY FINDINGS",
+        "FINDINGS": "KEY FINDINGS",
+        "IMPACT": "BUSINESS IMPACT",
+        "BUSINESS OUTCOME": "BUSINESS IMPACT",
+        "RECOMMENDED NEXT STEPS": "RECOMMENDATIONS",
+        "NEXT STEPS": "RECOMMENDATIONS",
+        "ACTIONS": "RECOMMENDATIONS",
+    }
+
     current_section = None
 
     for line in text.split("\n"):
@@ -44,13 +56,17 @@ def structure_response(text: str) -> dict:
         if not line:
             continue
 
-        upper = line.upper().replace(":", "")
+        upper = re.sub(r"\s+", " ", line.upper().replace(":", "")).strip()
 
-        if upper in sections:
-            current_section = upper
+        mapped = alias_map.get(upper, upper)
+        if mapped in sections:
+            current_section = mapped
             continue
 
-        if line.startswith("-") and current_section:
-            sections[current_section].append(line[1:].strip())
+        if current_section:
+            bullet_text = re.sub(r"^[-*•]\s*", "", line).strip()
+            bullet_text = re.sub(r"^\d+[\.)]\s*", "", bullet_text).strip()
+            if bullet_text and bullet_text != line:
+                sections[current_section].append(bullet_text)
 
     return sections

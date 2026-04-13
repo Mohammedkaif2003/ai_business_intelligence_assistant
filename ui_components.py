@@ -1,25 +1,16 @@
 import html
 import re
-import time
 from html import unescape
 
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
+from modules.chat_queue import queue_query
 from modules.auto_visualizer import (
     build_graph_follow_up_suggestions,
     chart_download_bytes,
 )
-
-
-def _queue_query(query_text: str):
-    cleaned = str(query_text or "").strip()
-    if not cleaned:
-        return
-    st.session_state["pending_query"] = cleaned
-    st.session_state["pending_query_id"] = str(time.time_ns())
-    st.session_state["active_page"] = "chat"
 
 
 def clean_text(text: str) -> str:
@@ -250,7 +241,7 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
         for idx, item in enumerate(suggestion_items):
             clean_q = clean_text(item["question"])
             if st_instance.button(clean_q, key=f"{download_key}_graph_followup_chart_{idx}", width="stretch"):
-                _queue_query(clean_q)
+                queue_query(clean_q)
 
 
 def render_sidebar_dataset_badge(name, rows, cols):
@@ -345,6 +336,16 @@ def render_structured_response(data: dict):
         "BUSINESS IMPACT": "Business Impact",
         "LIMITATIONS": "Limitations",
         "RECOMMENDATIONS": "Recommendations",
+        "RECOMMENDED NEXT STEPS": "Recommendations",
+    }
+
+    section_tones = {
+        "EXECUTIVE INSIGHT": "rgba(59, 130, 246, 0.18)",
+        "KEY FINDINGS": "rgba(16, 185, 129, 0.16)",
+        "BUSINESS IMPACT": "rgba(14, 165, 233, 0.16)",
+        "LIMITATIONS": "rgba(234, 179, 8, 0.14)",
+        "RECOMMENDATIONS": "rgba(99, 102, 241, 0.18)",
+        "RECOMMENDED NEXT STEPS": "rgba(99, 102, 241, 0.18)",
     }
 
     for section, points in data.items():
@@ -352,13 +353,24 @@ def render_structured_response(data: dict):
             continue
 
         label = section_labels.get(section, section.title())
-        st.markdown(f"### {label}")
+        tone = section_tones.get(section, "rgba(148, 163, 184, 0.14)")
+        st.markdown(
+            f"""
+            <div style="
+                border:1px solid rgba(148,163,184,0.20);
+                border-radius:14px;
+                padding:12px 14px;
+                margin:10px 0;
+                background:{tone};
+            ">
+                <div style="font-size:13px; text-transform:uppercase; letter-spacing:0.08em; color:#c7d6ee; margin-bottom:8px; font-weight:700;">{label}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         for point in points:
-            st.write(f"- {clean_text(point)}")
-
-        # Keep section separation subtle to reduce visual noise.
-        st.markdown('<div class="soft-divider"></div>', unsafe_allow_html=True)
+            st.markdown(f"- {clean_text(point)}")
 
 
 def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: int | None = None):

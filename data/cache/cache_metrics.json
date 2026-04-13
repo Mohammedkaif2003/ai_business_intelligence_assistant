@@ -1,8 +1,8 @@
 {
-  "total_cache_hits": 17,
-  "total_cache_misses": 13,
-  "total_api_calls": 13,
-  "last_updated_ts": 1776079036.948524,
+  "total_cache_hits": 23,
+  "total_cache_misses": 15,
+  "total_api_calls": 15,
+  "last_updated_ts": 1776087014.8625274,
   "dataset_stats": {
     "dataset-1": {
       "hits": 2,
@@ -13,8 +13,8 @@
       "misses": 1
     },
     "d65eb36392b637c914962e82a568cba28929daebe71f1059f1e5000a617730b3": {
-      "hits": 15,
-      "misses": 11
+      "hits": 21,
+      "misses": 13
     }
   }
 }

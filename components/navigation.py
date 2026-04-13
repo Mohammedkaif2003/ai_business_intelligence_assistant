@@ -15,7 +15,7 @@ def _label_for(option_id: str) -> str:
 
 def render_main_navigation(logger=None) -> str:
     default_page = "chat" if st.session_state.get("pending_query") or st.session_state.get("auto_query") else "overview"
-    active_page = st.session_state.get("active_page", default_page)
+    active_page = st.session_state.get("active_page_radio", st.session_state.get("active_page", default_page))
 
     valid_pages = [item[0] for item in NAV_OPTIONS]
     if active_page not in valid_pages:
@@ -27,6 +27,12 @@ def render_main_navigation(logger=None) -> str:
     # otherwise user clicks are immediately reverted.
     if "active_page_radio" not in st.session_state or st.session_state["active_page_radio"] not in valid_pages:
         st.session_state["active_page_radio"] = active_page
+
+    target_page = str(st.session_state.get("navigation_target_page", "") or "").strip()
+    if target_page in valid_pages:
+        st.session_state["active_page"] = target_page
+        st.session_state["active_page_radio"] = target_page
+        st.session_state["navigation_target_page"] = ""
 
     st.markdown('<div class="main-nav-wrap">', unsafe_allow_html=True)
     selected_page = st.radio(

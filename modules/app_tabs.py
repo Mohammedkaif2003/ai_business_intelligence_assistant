@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from modules.chat_queue import queue_query
 from modules.chat_handler import chat_handler
 from modules.chat_handler import generate_ai_dataset_questions
 from modules.auto_insights import generate_auto_insights
@@ -66,15 +67,6 @@ from ui_components import (
     render_table_panel,
     render_user_bubble,
 )
-
-
-def _queue_query(query_text: str):
-    cleaned = str(query_text or "").strip()
-    if not cleaned:
-        return
-    st.session_state["pending_query"] = cleaned
-    st.session_state["pending_query_id"] = str(time.time_ns())
-    st.session_state["active_page"] = "chat"
 
 
 def _query_cache_key(query: str, dataset_key: str | None) -> str:
@@ -248,7 +240,7 @@ def _render_try_asking_section(df: pd.DataFrame, schema: dict | None = None):
             idx = start + offset
             with chip_cols[offset]:
                 if st.button(suggestion, key=f"try_asking_{idx}", width="stretch"):
-                    _queue_query(suggestion)
+                    queue_query(suggestion)
 
 
 def render_data_overview_tab(df: pd.DataFrame):
@@ -345,21 +337,45 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         unsafe_allow_html=True,
     )
 
-    if st.button("🗑️ Clear Chat", key="clear_chat_btn"):
-        st.session_state.chat_history = []
-        st.session_state.messages = []
-        st.session_state.analysis_history = []
-        st.session_state.result_history = []
-        st.session_state.result_history_details = []
+    if st.button("🧹 Clear Current View", key="clear_chat_btn"):
+        # Non-destructive clear: keep saved chats in history, just reset the active view.
         st.session_state.pending_query = ""
         st.session_state.pending_query_id = ""
         st.session_state.last_processed_query_id = ""
-        persist_dataset_state()
+        st.session_state["selected_chat_history_id"] = ""
+        st.session_state["chat_view_mode"] = "new"
 
     st.markdown("</div>", unsafe_allow_html=True)
     init_analysis_state()
 
-    for entry in st.session_state.chat_history:
+    selected_history_id = str(st.session_state.get("selected_chat_history_id", "") or "").strip()
+    chat_view_mode = str(st.session_state.get("chat_view_mode", "") or "").strip()
+    history_entries = list(st.session_state.chat_history)
+    # Default to a clean new-chat canvas. Saved history appears only when a
+    # specific entry is selected from the sidebar.
+    visible_history_entries = []
+    if chat_view_mode == "new":
+        visible_history_entries = []
+    if selected_history_id:
+        visible_history_entries = [
+            entry
+            for entry in history_entries
+            if str(entry.get("history_id") or entry.get("cloud_history_id") or "").strip() == selected_history_id
+        ]
+        if not visible_history_entries:
+            st.session_state["selected_chat_history_id"] = ""
+            visible_history_entries = []
+
+    if selected_history_id and visible_history_entries:
+        st.info("Viewing a saved chat. Start a new question or open the latest chat to continue.")
+        if st.button("⬅️ Back to new chat", key="back_to_latest_chat_btn"):
+            st.session_state["selected_chat_history_id"] = ""
+            st.session_state["chat_view_mode"] = "new"
+            st.rerun()
+    elif chat_view_mode == "new":
+        st.info("New chat ready. Ask your next question to start a fresh thread.")
+
+    for entry in visible_history_entries:
         render_chat_history_entry(entry)
 
     # Render try-asking suggestions in an expander to save space and API calls
@@ -380,7 +396,9 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         del st.session_state.auto_query
 
     if submitted_query:
-        _queue_query(submitted_query)
+        st.session_state["selected_chat_history_id"] = ""
+        st.session_state["chat_view_mode"] = ""
+        queue_query(submitted_query)
 
     query = st.session_state.get("pending_query", "")
     query_id = st.session_state.get("pending_query_id", "")
@@ -597,7 +615,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
             st.markdown("**Suggested Rephrases**")
             for idx, suggestion in enumerate(rephrase_suggestions):
                 if st.button(suggestion, key=f"rephrase_prompt_{hash(query)}_{idx}", width="stretch"):
-                    _queue_query(suggestion)
+                    queue_query(suggestion)
             st.markdown("</div>", unsafe_allow_html=True)
 
         intent_info = {"intent": intent}

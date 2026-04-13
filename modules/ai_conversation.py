@@ -31,7 +31,7 @@ def _is_rate_limit_error(error: Exception) -> bool:
 #  SENIOR DATA ANALYST SYSTEM PROMPT
 # ═══════════════════════════════════════════════════
 
-ANALYST_SYSTEM_PROMPT = """You are a Senior Business Intelligence Analyst.
+ANALYST_SYSTEM_PROMPT = """You are a Principal Business Intelligence Analyst writing for executives.
 
 You MUST strictly follow the output format below.
 
@@ -68,6 +68,9 @@ STRICT RULES
 - DO NOT change section names
 - DO NOT add extra sections
 - Keep it concise and data-driven
+- Avoid generic wording; reference values, trends, deltas, and segments when available
+- If confidence is limited, state that in LIMITATIONS
+- Recommendations must be specific and action-oriented (owner/timeline style)
 
 IMPORTANT:
 - Do NOT return HTML tags (no <div>, <span>, etc.)
@@ -85,8 +88,11 @@ def _build_data_context(result, insight=""):
             desc = result[numeric_cols].describe().round(2).to_string()
             stats = f"\nNumeric summary:\n{desc}"
 
+        missing_ratio = (result.isna().sum().sum() / (result.shape[0] * max(result.shape[1], 1))) if result.shape[0] > 0 else 0
+
         data_summary = f"""Data returned: DataFrame with {result.shape[0]} rows and {result.shape[1]} columns.
 Columns: {', '.join(str(c) for c in result.columns)}
+Estimated missing data ratio: {missing_ratio:.2%}
 First rows:
 {result.head(3).to_string(index=False)}
 {stats}
@@ -122,12 +128,14 @@ def generate_conversational_response(query, result, insight="", df=None):
         except Exception:
             pass
 
-    prompt = f"""The user asked: "{query}"
+    prompt = f"""User question: "{query}"
 
-Here is the analysis result:
+Analysis evidence:
 {data_summary}
 
-Analyze this data using your senior analyst framework. Be specific to THIS data — no generic responses."""
+Write an executive-quality response using the required section format.
+Be specific to THIS dataset and include quantified statements whenever possible.
+Do not repeat section headers inside bullets."""
     groq_api_key = get_secret("GROQ_API_KEY")
     if groq_api_key:
         try:
@@ -138,8 +146,8 @@ Analyze this data using your senior analyst framework. Be specific to THIS data 
                     {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.15,
-                max_tokens=220,
+                temperature=0.12,
+                max_tokens=260,
             )
             if response and response.choices:
                 return sanitize_ai_output(response.choices[0].message.content)

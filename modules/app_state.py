@@ -1,7 +1,9 @@
 import pandas as pd
 import streamlit as st
+import time
 
 from modules.prompt_cache import get_cached_dataset_state, save_cached_dataset_state
+from modules.supabase_service import fetch_cloud_chat_history, save_cloud_chat_history
 
 
 def ensure_analysis_state():
@@ -22,6 +24,26 @@ def _active_dataset_cache_key() -> str:
     return str(st.session_state.get("active_dataset_cache_key") or st.session_state.get("active_dataset_key") or st.session_state.get("dataset_name") or "").strip()
 
 
+def _history_entry_id(entry: dict) -> str:
+    if not isinstance(entry, dict):
+        return ""
+    return str(entry.get("history_id") or entry.get("cloud_history_id") or "").strip()
+
+
+def _ensure_chat_history_ids(entries: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        normalized_entry = dict(entry)
+        history_id = _history_entry_id(normalized_entry)
+        if not history_id:
+            history_id = str(time.time_ns())
+        normalized_entry["history_id"] = history_id
+        normalized.append(normalized_entry)
+    return normalized
+
+
 def restore_persisted_analysis_state() -> None:
     dataset_cache_key = _active_dataset_cache_key()
     if not dataset_cache_key:
@@ -35,6 +57,154 @@ def restore_persisted_analysis_state() -> None:
         value = cached_state.get(key)
         if isinstance(value, list):
             st.session_state[key] = value.copy()
+
+    if isinstance(st.session_state.get("chat_history"), list):
+        st.session_state["chat_history"] = _ensure_chat_history_ids(st.session_state["chat_history"])
+
+
+def _cloud_row_to_chat_entry(row: dict) -> dict:
+    row_id = str(row.get("id", "") or "").strip()
+    summary_value = row.get("summary", []) if isinstance(row, dict) else []
+    if not isinstance(summary_value, list):
+        summary_value = []
+
+    source_columns_value = row.get("source_columns", []) if isinstance(row, dict) else []
+    if not isinstance(source_columns_value, list):
+        source_columns_value = []
+
+    return {
+        "history_id": row_id or str(time.time_ns()),
+        "cloud_history_id": row_id or "",
+        "created_at": row.get("created_at"),
+        "query": str(row.get("query", "") or ""),
+        "result": str(row.get("ai_response", "") or row.get("insight", "") or ""),
+        "code": "",
+        "chart_data": None,
+        "insight": str(row.get("insight", "") or ""),
+        "summary": summary_value,
+        "charts": [],
+        "ai_response": str(row.get("ai_response", "") or ""),
+        "suggestions": "",
+        "query_rejected": False,
+        "confidence": row.get("confidence"),
+        "source_columns": source_columns_value,
+        "intent": row.get("intent"),
+        "rephrases": [],
+    }
+
+
+def restore_cloud_analysis_state() -> bool:
+    user_id = str(st.session_state.get("supabase_user_id", "") or "").strip()
+    access_token = str(st.session_state.get("supabase_access_token", "") or "").strip()
+    if not user_id or not access_token:
+        return False
+
+    dataset_key = _active_dataset_cache_key()
+    rows = fetch_cloud_chat_history(user_id, access_token, dataset_key=dataset_key, limit=100)
+    if not rows:
+        return False
+
+    current_history = _ensure_chat_history_ids(list(st.session_state.get("chat_history", [])))
+    existing_ids = {
+        _history_entry_id(entry)
+        for entry in current_history
+        if _history_entry_id(entry)
+    }
+    cloud_entries = [_cloud_row_to_chat_entry(row) for row in rows if str(row.get("id", "") or "").strip() not in existing_ids]
+
+    if cloud_entries:
+        st.session_state["chat_history"] = _ensure_chat_history_ids(current_history + cloud_entries)
+
+        if not st.session_state.get("messages"):
+            st.session_state["messages"] = []
+        for entry in cloud_entries:
+            query = str(entry.get("query", "") or "").strip()
+            answer = str(entry.get("ai_response", "") or entry.get("insight", "") or "").strip()
+            if query:
+                st.session_state["messages"].append({"role": "user", "content": query})
+            if answer:
+                st.session_state["messages"].append({"role": "assistant", "content": answer})
+
+        if not st.session_state.get("analysis_history"):
+            st.session_state["analysis_history"] = []
+        for entry in cloud_entries:
+            st.session_state["analysis_history"].append(
+                {
+                    "query": str(entry.get("query", "") or ""),
+                    "result": str(entry.get("ai_response", "") or entry.get("insight", "") or ""),
+                    "code": "",
+                    "insight": str(entry.get("insight", "") or ""),
+                    "ai_response": str(entry.get("ai_response", "") or ""),
+                    "charts": [],
+                    "summary": entry.get("summary", []) if isinstance(entry.get("summary", []), list) else [],
+                    "intent": entry.get("intent"),
+                    "confidence": entry.get("confidence"),
+                    "source_columns": entry.get("source_columns", []) if isinstance(entry.get("source_columns", []), list) else [],
+                }
+            )
+
+        if not st.session_state.get("result_history"):
+            st.session_state["result_history"] = []
+        st.session_state["result_history"].extend([str(entry.get("ai_response", "") or entry.get("insight", "") or "") for entry in cloud_entries])
+
+        if not st.session_state.get("result_history_details"):
+            st.session_state["result_history_details"] = []
+        st.session_state["result_history_details"].extend(
+            [{"query": str(entry.get("query", "") or ""), "history_id": _history_entry_id(entry)} for entry in cloud_entries]
+        )
+
+    return True
+
+
+def delete_chat_history_entry(history_id: str) -> bool:
+    history_id = str(history_id or "").strip()
+    if not history_id:
+        return False
+
+    chat_history = st.session_state.get("chat_history", [])
+    remaining_history = [entry for entry in chat_history if _history_entry_id(entry) != history_id]
+    if len(remaining_history) == len(chat_history):
+        return False
+
+    st.session_state["chat_history"] = remaining_history
+
+    st.session_state["analysis_history"] = [
+        {
+            "query": str(entry.get("query", "") or ""),
+            "result": entry.get("result"),
+            "code": entry.get("code", ""),
+            "insight": entry.get("insight", ""),
+            "ai_response": entry.get("ai_response", ""),
+            "charts": entry.get("charts", []) if isinstance(entry.get("charts", []), list) else [],
+            "summary": entry.get("summary", []) if isinstance(entry.get("summary", []), list) else [],
+            "intent": entry.get("intent"),
+            "confidence": entry.get("confidence"),
+            "source_columns": entry.get("source_columns", []) if isinstance(entry.get("source_columns", []), list) else [],
+        }
+        for entry in remaining_history
+    ]
+
+    st.session_state["result_history"] = [entry.get("result") for entry in remaining_history]
+    st.session_state["result_history_details"] = [
+        {"query": entry.get("query", ""), "history_id": _history_entry_id(entry)}
+        for entry in remaining_history
+    ]
+    messages: list[dict[str, str]] = []
+    for entry in remaining_history:
+        query = str(entry.get("query", "") or "").strip()
+        answer = str(entry.get("ai_response", "") or entry.get("insight", "") or "").strip()
+        if query:
+            messages.append({"role": "user", "content": query})
+        if answer:
+            messages.append({"role": "assistant", "content": answer})
+    st.session_state["messages"] = messages
+
+    selected_history_id = str(st.session_state.get("selected_chat_history_id", "") or "").strip()
+    if selected_history_id == history_id:
+        st.session_state["selected_chat_history_id"] = remaining_history[-1]["history_id"] if remaining_history else ""
+
+    persist_dataset_state()
+    return True
 
 
 def persist_dataset_state() -> None:
@@ -87,6 +257,8 @@ def append_message_pair(query: str, result):
 
 
 def store_analysis_outputs(query, result, chart_data, chart_figs, code, report_insight, ai_response, summary_list, suggestions, query_rejected, is_axes_result):
+    history_id = str(time.time_ns())
+    created_at = pd.Timestamp.now("UTC").isoformat()
     st.session_state["analysis_result"] = result
     st.session_state["last_result"] = result
     st.session_state["last_query"] = query
@@ -109,6 +281,8 @@ def store_analysis_outputs(query, result, chart_data, chart_figs, code, report_i
         })
 
     st.session_state["chat_history"].append({
+        "history_id": history_id,
+        "created_at": created_at,
         "query": query,
         "result": result,
         "code": code if not query_rejected else "",
@@ -143,6 +317,8 @@ def persist_analysis_cycle(
     confidence: float | None = None,
     source_columns: list[str] | None = None,
 ):
+    history_id = str(time.time_ns())
+    created_at = pd.Timestamp.now("UTC").isoformat()
     st.session_state["messages"].append({"role": "user", "content": query})
     if isinstance(result, pd.DataFrame):
         preview = result.head(5).to_string(index=False)
@@ -192,6 +368,8 @@ def persist_analysis_cycle(
 
     st.session_state["chat_history"].append(
         {
+            "history_id": history_id,
+            "created_at": created_at,
             "query": query,
             "result": result,
             "code": code if not query_rejected else "",
@@ -208,5 +386,13 @@ def persist_analysis_cycle(
             "rephrases": rephrases,
         }
     )
+
+    user_id = str(st.session_state.get("supabase_user_id", "") or "").strip()
+    access_token = str(st.session_state.get("supabase_access_token", "") or "").strip()
+    if user_id:
+        latest_entry = st.session_state["chat_history"][-1]
+        ok, cloud_history_id = save_cloud_chat_history(user_id, access_token, _active_dataset_cache_key(), latest_entry)
+        if ok and cloud_history_id:
+            latest_entry["cloud_history_id"] = cloud_history_id
 
     persist_dataset_state()

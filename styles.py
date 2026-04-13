@@ -20,10 +20,30 @@ CUSTOM_CSS = """
     --card-shadow: 0 14px 32px rgba(2, 6, 23, 0.28);
 }
 
-html, body, .stApp {
+html, body, .stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"] {
     background: #03111d !important;
     color: var(--text-main) !important;
     font-family: 'Manrope', 'Segoe UI', sans-serif !important;
+}
+
+html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Remove default Streamlit chrome strips that can look white on some themes. */
+header[data-testid="stHeader"],
+footer,
+[data-testid="stToolbar"],
+[data-testid="stDecoration"] {
+    background: transparent !important;
+}
+
+[data-testid="stAppViewContainer"] > .main {
+    background: transparent !important;
 }
 
 [data-testid="stSidebar"],
@@ -716,33 +736,65 @@ div[aria-selected="true"][role="option"] > div {
 
 /* Main navigation polish (radio-based tabs) for stable spacing and lower clutter. */
 .main-nav-wrap {
-    margin: 8px 0 14px;
-    padding: 6px;
-    border-radius: 14px;
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    background: rgba(255, 255, 255, 0.03);
+    width: 100%;
+    margin: 10px 0 16px;
+    padding: 10px;
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background:
+        radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.14), transparent 40%),
+        linear-gradient(180deg, rgba(9, 24, 45, 0.82), rgba(7, 18, 33, 0.92));
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.22);
+}
+
+.main-nav-wrap [data-testid="stRadio"] {
+    width: 100%;
 }
 
 .main-nav-wrap [data-testid="stRadio"] > div {
-    gap: 8px;
+    width: 100%;
+}
+
+.main-nav-wrap [data-testid="stRadio"] [role="radiogroup"] {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
 }
 
 .main-nav-wrap [data-testid="stRadio"] label {
-    padding: 8px 12px !important;
-    border-radius: 10px !important;
-    border: 1px solid rgba(148, 163, 184, 0.16) !important;
-    background: rgba(255, 255, 255, 0.015) !important;
-    min-height: 38px;
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 12px 14px !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
+    background: rgba(255, 255, 255, 0.02) !important;
+    min-height: 46px;
+    transition: transform 170ms ease, border-color 170ms ease, background 170ms ease, box-shadow 170ms ease;
 }
 
 .main-nav-wrap [data-testid="stRadio"] label:hover {
-    border-color: rgba(99, 102, 241, 0.36) !important;
-    background: rgba(99, 102, 241, 0.08) !important;
+    transform: translateY(-1px);
+    border-color: rgba(99, 102, 241, 0.46) !important;
+    background: rgba(99, 102, 241, 0.13) !important;
+    box-shadow: 0 8px 18px rgba(79, 70, 229, 0.22);
 }
 
 .main-nav-wrap [data-testid="stRadio"] input:checked + div {
     color: #ffffff !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
+}
+
+.main-nav-wrap [data-testid="stRadio"] label:has(input:checked) {
+    border-color: rgba(129, 140, 248, 0.68) !important;
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.35), rgba(124, 58, 237, 0.34)) !important;
+    box-shadow: 0 12px 22px rgba(79, 70, 229, 0.28);
+}
+
+@media (max-width: 900px) {
+    .main-nav-wrap [data-testid="stRadio"] [role="radiogroup"] {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .ai-theme-box .stButton > button {
