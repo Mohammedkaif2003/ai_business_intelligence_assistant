@@ -1,0 +1,20 @@
+{
+  "total_cache_hits": 17,
+  "total_cache_misses": 13,
+  "total_api_calls": 13,
+  "last_updated_ts": 1776079036.948524,
+  "dataset_stats": {
+    "dataset-1": {
+      "hits": 2,
+      "misses": 1
+    },
+    "dataset-2": {
+      "hits": 0,
+      "misses": 1
+    },
+    "d65eb36392b637c914962e82a568cba28929daebe71f1059f1e5000a617730b3": {
+      "hits": 15,
+      "misses": 11
+    }
+  }
+}

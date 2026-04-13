@@ -4,7 +4,7 @@ import streamlit as st
 from modules.dataset_analyzer import analyze_dataset
 
 
-def activate_dataset(dataset_key: str, dataframe: pd.DataFrame) -> bool:
+def activate_dataset(dataset_key: str, dataframe: pd.DataFrame, dataset_fingerprint: str | None = None) -> bool:
     if dataframe is None:
         return False
 
@@ -14,6 +14,7 @@ def activate_dataset(dataset_key: str, dataframe: pd.DataFrame) -> bool:
 
     st.session_state["df"] = dataframe
     st.session_state["active_dataset_key"] = dataset_key
+    st.session_state["active_dataset_cache_key"] = dataset_fingerprint or dataset_key
     st.session_state["dataset_name"] = dataset_key
     st.session_state["schema"] = analyze_dataset(dataframe)
     return True

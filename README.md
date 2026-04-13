@@ -101,6 +101,26 @@ Core workflows:
     `-- test_query_utils.py
 ```
 
+## Streamlit Deployment
+
+This project is designed to run on Streamlit Community Cloud or any Streamlit-hosted deployment with secrets configured.
+
+### Secrets
+
+Add your Groq API key in Streamlit secrets for deployment, or in a local `.env` file for development:
+
+```env
+GROQ_API_KEY=your_groq_key_here
+```
+
+At runtime, the app checks `st.secrets` first, then `.env`, then shell environment variables.
+
+### Deployment Checklist
+
+- Set the Groq API key.
+- Keep `requirements.txt` pinned and install dependencies before deploying.
+- Test one dataset load, one AI question, one follow-up click, and one PDF export after deployment.
+
 ## Quick Start
 
 ### 1. Create a virtual environment
@@ -168,10 +188,16 @@ Current coverage focuses on:
 
 ## Security and Guardrails
 
-- API keys are read from environment variables or `.env`
+- API keys are read from Streamlit secrets, `.env`, or environment variables
 - AI-generated code is filtered before execution
 - Irrelevant questions are rejected before code generation
 - Result rendering falls back safely for unsupported outputs
+
+## Production Readiness
+
+- Dataset loading is cached for reruns
+- Query response caching reduces repeated API calls
+- Startup is lightweight for Streamlit deployment
 
 ## Known Limitations
 

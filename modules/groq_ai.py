@@ -3,12 +3,16 @@ from dotenv import load_dotenv
 
 from modules.app_secrets import get_secret
 
-load_dotenv()
+load_dotenv(override=True)
 
 # Central Groq configuration so changes are in one place
-GROQ_API_KEY = get_secret("GROQ_API_KEY")
 GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
 GROQ_SUGGESTION_TEMPERATURE = 0.4
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    text = str(error).lower()
+    return "429" in text or "too many requests" in text or "rate limit" in text
 
 
 def _format_dataset_label(dataset_name) -> str:
@@ -62,10 +66,11 @@ def suggest_business_questions(query, df, schema, dataset_name=None):
     This is intentionally kept as a separate, optional call because it can
     add noticeable latency and token usage.
     """
-    if not GROQ_API_KEY:
+    groq_api_key = get_secret("GROQ_API_KEY")
+    if not groq_api_key:
         return "AI suggestion failed: Groq API key is not configured."
 
-    client = Groq(api_key=GROQ_API_KEY)
+    client = Groq(api_key=groq_api_key)
 
     dataset_info = _build_dataset_info(query, df, schema, dataset_name)
     dataset_label = _format_dataset_label(dataset_name)
@@ -120,5 +125,7 @@ RULES:
         return response.choices[0].message.content
 
     except Exception as e:
+        if _is_rate_limit_error(e):
+            return "AI suggestion paused: Groq rate limit reached. Please wait a moment and try again."
         return f"AI suggestion failed: {str(e)}"
 

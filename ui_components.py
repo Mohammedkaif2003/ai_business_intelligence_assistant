@@ -1,5 +1,6 @@
 import html
 import re
+import time
 from html import unescape
 
 import streamlit as st
@@ -10,6 +11,15 @@ from modules.auto_visualizer import (
     build_graph_follow_up_suggestions,
     chart_download_bytes,
 )
+
+
+def _queue_query(query_text: str):
+    cleaned = str(query_text or "").strip()
+    if not cleaned:
+        return
+    st.session_state["pending_query"] = cleaned
+    st.session_state["pending_query_id"] = str(time.time_ns())
+    st.session_state["active_page"] = "chat"
 
 
 def clean_text(text: str) -> str:
@@ -191,7 +201,7 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
         ),
     )
     chart_key = key_prefix or re.sub(r"[^a-zA-Z0-9_]+", "_", payload.get("title", "chart"))
-    st_instance.plotly_chart(fig, use_container_width=True, key=f"{chart_key}_plot")
+    st_instance.plotly_chart(fig, width="stretch", key=f"{chart_key}_plot")
 
     rationale = clean_text(payload.get("rationale", ""))
     if rationale:
@@ -217,7 +227,7 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
                 file_name=f"{download_key}_plot_data.csv",
                 mime="text/csv",
                 key=f"{download_key}_csv",
-                use_container_width=True,
+                width="stretch",
             )
         with right:
             try:
@@ -228,7 +238,7 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
                     file_name=f"{download_key}.png",
                     mime="image/png",
                     key=f"{download_key}_png",
-                    use_container_width=True,
+                    width="stretch",
                 )
             except Exception:
                 st.caption("PNG export is unavailable in this environment.")
@@ -239,9 +249,8 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
         st_instance.caption("These prompts are the most likely to return chart-friendly results.")
         for idx, item in enumerate(suggestion_items):
             clean_q = clean_text(item["question"])
-            if st_instance.button(clean_q, key=f"{download_key}_graph_followup_chart_{idx}", use_container_width=True):
-                st.session_state.auto_query = clean_q
-                st.rerun()
+            if st_instance.button(clean_q, key=f"{download_key}_graph_followup_chart_{idx}", width="stretch"):
+                _queue_query(clean_q)
 
 
 def render_sidebar_dataset_badge(name, rows, cols):
@@ -307,7 +316,7 @@ def render_sidebar_question_inspiration(questions):
 
         for idx, question in enumerate(questions):
             label = clean_text(question)
-            if st.button(label, key=f"sidebar_question_{idx}", use_container_width=True):
+            if st.button(label, key=f"sidebar_question_{idx}", width="stretch"):
                 clicked_question = label
 
         st.markdown("</div>", unsafe_allow_html=True)
@@ -348,7 +357,8 @@ def render_structured_response(data: dict):
         for point in points:
             st.write(f"- {clean_text(point)}")
 
-        st.markdown("---")
+        # Keep section separation subtle to reduce visual noise.
+        st.markdown('<div class="soft-divider"></div>', unsafe_allow_html=True)
 
 
 def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: int | None = None):
@@ -438,3 +448,143 @@ def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: 
 
     st.markdown(table_html, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_quality_badge(confidence: float | None = None, source_columns: list[str] | None = None):
+    """
+    Render a visual quality/confidence badge for AI responses.
+    
+    Args:
+        confidence: Float between 0.0-1.0 indicating model confidence
+        source_columns: List of column names used to derive the answer
+    
+    Badge levels:
+    - High (green): confidence >= 0.8 AND source_columns present
+    - Medium (yellow): 0.5 <= confidence < 0.8 OR partial sources
+    - Low (red): confidence < 0.5 OR no sources
+    """
+    confidence = float(confidence or 0.0)
+    confidence = max(0.0, min(1.0, confidence))
+    source_columns = source_columns or []
+    has_sources = bool(source_columns and len(source_columns) > 0)
+    
+    # Determine a user-friendly badge level.
+    if confidence >= 0.8 and has_sources:
+        badge_level = "✅ High Confidence Insight"
+        badge_color = "#10b981"  # Green
+        badge_bg = "rgba(16, 185, 129, 0.1)"
+        badge_border = "rgba(16, 185, 129, 0.3)"
+        icon = "✅"
+    elif confidence >= 0.5 or has_sources:
+        badge_level = "ℹ️ Confidence Review Recommended"
+        badge_color = "#f59e0b"  # Amber
+        badge_bg = "rgba(245, 158, 11, 0.1)"
+        badge_border = "rgba(245, 158, 11, 0.3)"
+        icon = "ℹ️"
+    else:
+        badge_level = "⚠️ Low Confidence Insight"
+        badge_color = "#ef4444"  # Red
+        badge_bg = "rgba(239, 68, 68, 0.1)"
+        badge_border = "rgba(239, 68, 68, 0.3)"
+        icon = "⚠️"
+    
+    sources_text = " & ".join(source_columns[:2]) if source_columns else "active dataset"
+    sources_display = f"📊 Based on {sources_text} data"
+    
+    st.markdown(
+        f"""
+        <div style="
+            background: {badge_bg};
+            border: 1px solid {badge_border};
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        ">
+            <span style="
+                color: {badge_color};
+                font-weight: 700;
+                font-size: 16px;
+            ">{icon}</span>
+            <div style="flex: 1;">
+                <div style="
+                    color: {badge_color};
+                    font-weight: 700;
+                    font-size: 13px;
+                ">
+                    {badge_level}
+                </div>
+                <div style="
+                    color: #cbd5e1;
+                    font-size: 12px;
+                    margin-top: 3px;
+                ">
+                    {sources_display}
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_settings_panel():
+    """
+    Render AI settings panel in the sidebar for model/temperature tuning.
+    Returns a dict with current settings.
+    """
+    # Hide developer-tuning controls from end-user UI while keeping stable defaults.
+    model_choice = st.session_state.get("ai_model", "llama-3.3-70b")
+    temperature = float(st.session_state.get("ai_temperature", 0.7))
+    max_tokens = int(st.session_state.get("ai_max_tokens", 1024))
+    use_cache = bool(st.session_state.get("use_response_cache", True))
+    
+    # Store settings in session state
+    st.session_state["ai_model"] = model_choice
+    st.session_state["ai_temperature"] = temperature
+    st.session_state["ai_max_tokens"] = max_tokens
+    st.session_state["use_response_cache"] = use_cache
+    
+    return {
+        "model": model_choice,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "use_cache": use_cache,
+    }
+
+
+def render_latency_badge(latency_ms: float | None = None):
+    """
+    Render a latency badge showing API response time and estimated token usage.
+    
+    Args:
+        latency_ms: Response time in milliseconds
+    """
+    # Keep developer metrics out of user-facing UI.
+    # Latency and token details should be tracked via logs/monitoring only.
+    return
+
+
+def render_queue_status(queue_stats: dict | None = None):
+    """
+    Render request queue status badge.
+    
+    Args:
+        queue_stats: Dict with queue status from request_queue module
+    """
+    # Queue diagnostics are operational details; keep out of end-user UI.
+    return
+
+
+def render_cache_statistics(cache_stats: dict | None = None):
+    """
+    Render cache hit/miss statistics.
+    
+    Args:
+        cache_stats: Dict with cache metrics from cache_metrics module
+    """
+    # Cache metrics are developer/ops details; keep out of end-user UI.
+    return

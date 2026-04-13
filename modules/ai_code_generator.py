@@ -10,6 +10,11 @@ from modules.code_executor import validate_generated_code
 api_key = get_secret("GROQ_API_KEY")
 
 
+def _is_rate_limit_error(error: Exception) -> bool:
+    text = str(error).lower()
+    return "429" in text or "too many requests" in text or "rate limit" in text
+
+
 @st.cache_data(show_spinner=False)
 def generate_analysis_code(api_key, query, df, dataset_context):
     client = Groq(api_key=api_key)
@@ -18,83 +23,36 @@ def generate_analysis_code(api_key, query, df, dataset_context):
     numeric_cols = list(df.select_dtypes(include="number").columns)
     categorical_cols = list(df.select_dtypes(exclude="number").columns)
 
-    prompt = f"""
-You are an expert Python data analyst.
+    prompt = f"""Return only valid Python code.
 
-IMPORTANT:
-- Do NOT use external libraries like scipy
-- Use only pandas, numpy, plotly.express
-- For outliers, use IQR method (NOT zscore)
+Use pandas and plotly.express only. Do not import extra libraries.
+Use df as the dataframe. Put final output in result and charts in charts = [].
+Prefer business metrics when available. Use aggregation, grouping, sorting, filtering, or top-N logic. Do not return raw df unless asked.
 
-You are analyzing a pandas dataframe named df.
-
-DATASET CONTEXT
----------------
+Dataset context:
 {dataset_context}
 
-AVAILABLE COLUMNS
------------------
-{columns}
-
-COLUMN TYPES
-------------
+Columns: {columns}
 Numeric: {numeric_cols}
 Categorical: {categorical_cols}
+Question: {query}
 
-USER QUESTION
--------------
-{query}
-
-RULES
------
-1. Write ONLY valid Python code.
-2. Use dataframe name: df.
-3. Store final output in `result`.
-4. Create charts using plotly.express and store in `charts = []`.
-5. ALWAYS define `charts = []`.
-6. Do NOT use matplotlib or seaborn.
-7. Wrap everything inside ```python``` block.
-8. NO explanations, ONLY code.
-Always prioritize business-relevant metrics:
-- Prefer Revenue, Profit, Cost for analysis
-- Use grouping for meaningful insights (e.g., by Region, Product, Department)
-- Avoid returning raw data unless explicitly requested
-QUERY HANDLING
---------------
-- "North region" -> df[df['Region'] == 'North']
-- "top N" -> df.sort_values(by=<numeric_column>, ascending=False).head(N)
-
-MULTI-STEP LOGIC
-----------------
-1. Filter
-2. Group/Aggregate
-3. Sort
-4. Limit
-
-OUTLIER METHOD
---------------
-Q1 = df[col].quantile(0.25)
-Q3 = df[col].quantile(0.75)
-IQR = Q3 - Q1
-df[(df[col] < Q1 - 1.5*IQR) | (df[col] > Q3 + 1.5*IQR)]
-
-EXAMPLE
--------
-```python
-charts = []
-result = df.groupby("Category")["Revenue"].sum().reset_index()
-```
-Do NOT return df.head() or raw dataframe unless explicitly asked.
-Always perform aggregation, filtering, or calculation.
+Rules:
+- Output only Python code in one ```python``` block.
+- Always define charts = [].
+- Use IQR for outliers.
+- No explanations or markdown.
+- Keep the result focused and business-ready.
 """
     try:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
+            max_tokens=700,
         )
 
-        raw_output = response.choices[0].message.content
+        raw_output = response.choices[0].message.content or ""
         match = re.search(r"```python\s*(.*?)\s*```", raw_output, re.DOTALL)
         if match:
             code = match.group(1)
@@ -123,4 +81,6 @@ Always perform aggregation, filtering, or calculation.
         return code
 
     except Exception as e:
+        if _is_rate_limit_error(e):
+            return "charts = []\nresult = 'AI code generation paused: Groq rate limit reached. Please wait 30-60 seconds and retry.'"
         return f"charts = []\nresult = 'AI code generation failed: {str(e)}'"

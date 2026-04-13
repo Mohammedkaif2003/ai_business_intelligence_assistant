@@ -1,6 +1,8 @@
 import pandas as pd
 import streamlit as st
 
+from modules.prompt_cache import get_cached_dataset_state, save_cached_dataset_state
+
 
 def ensure_analysis_state():
     defaults = {
@@ -16,9 +18,48 @@ def ensure_analysis_state():
             st.session_state[key] = value.copy() if isinstance(value, list) else value
 
 
+def _active_dataset_cache_key() -> str:
+    return str(st.session_state.get("active_dataset_cache_key") or st.session_state.get("active_dataset_key") or st.session_state.get("dataset_name") or "").strip()
+
+
+def restore_persisted_analysis_state() -> None:
+    dataset_cache_key = _active_dataset_cache_key()
+    if not dataset_cache_key:
+        return
+
+    cached_state = get_cached_dataset_state(dataset_cache_key)
+    if not isinstance(cached_state, dict):
+        return
+
+    for key in ("chat_history", "analysis_history", "result_history", "result_history_details", "recent_activity", "messages"):
+        value = cached_state.get(key)
+        if isinstance(value, list):
+            st.session_state[key] = value.copy()
+
+
+def persist_dataset_state() -> None:
+    dataset_cache_key = _active_dataset_cache_key()
+    if not dataset_cache_key:
+        return
+
+    save_cached_dataset_state(
+        dataset_cache_key,
+        {
+            "chat_history": st.session_state.get("chat_history", []),
+            "analysis_history": st.session_state.get("analysis_history", []),
+            "result_history": st.session_state.get("result_history", []),
+            "result_history_details": st.session_state.get("result_history_details", []),
+            "recent_activity": st.session_state.get("recent_activity", []),
+            "messages": st.session_state.get("messages", []),
+        },
+    )
+
+
 def reset_analysis_state():
     for key in ("chat_history", "messages", "analysis_history", "result_history", "result_history_details", "recent_activity"):
         st.session_state[key] = []
+
+    persist_dataset_state()
 
 
 def add_recent_activity(kind: str, description: str, limit: int = 8):
@@ -80,6 +121,8 @@ def store_analysis_outputs(query, result, chart_data, chart_figs, code, report_i
         "query_rejected": query_rejected,
     })
 
+    persist_dataset_state()
+
 
 def persist_analysis_cycle(
     *,
@@ -97,6 +140,8 @@ def persist_analysis_cycle(
     intent: str | None,
     rephrases: list,
     result_history_entry: dict,
+    confidence: float | None = None,
+    source_columns: list[str] | None = None,
 ):
     st.session_state["messages"].append({"role": "user", "content": query})
     if isinstance(result, pd.DataFrame):
@@ -140,6 +185,8 @@ def persist_analysis_cycle(
                 "charts": chart_figs,
                 "summary": summary_list,
                 "intent": intent,
+                "confidence": confidence,
+                "source_columns": source_columns or [],
             }
         )
 
@@ -155,7 +202,11 @@ def persist_analysis_cycle(
             "ai_response": ai_response,
             "suggestions": suggestions if (not query_rejected and suggestions) else "",
             "query_rejected": query_rejected,
+            "confidence": confidence,
+            "source_columns": source_columns or [],
             "intent": intent,
             "rephrases": rephrases,
         }
     )
+
+    persist_dataset_state()

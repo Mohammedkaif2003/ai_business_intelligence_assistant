@@ -3,6 +3,11 @@ __pycache__/
 _pycache_/
 *.pyc
 venv/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+desktop.ini
 AI_Executive_Report.pdf
 ~$*
 

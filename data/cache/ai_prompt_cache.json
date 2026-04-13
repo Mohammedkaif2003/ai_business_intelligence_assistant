@@ -1,0 +1,471 @@
+{
+  "demo-dataset": {
+    "try_asking_questions": [
+      "Q1?",
+      "Q2?"
+    ],
+    "chat_history": [
+      {
+        "query": "a"
+      }
+    ],
+    "analysis_history": [
+      1
+    ],
+    "response_cache": {}
+  },
+  "d65eb36392b637c914962e82a568cba28929daebe71f1059f1e5000a617730b3": {
+    "try_asking_questions": [
+      "What is the average Budget by Department?",
+      "Which Department has the highest Actual spending in the most recent Year?",
+      "What is the trend of Variance Pct over the last 5 Years?",
+      "What is the top Department by Variance in the current Quarter?",
+      "Which Year had the largest difference between Budget and Actual?"
+    ],
+    "response_cache": {
+      "6b4656f3c786dcf53b890c7f60277d6c2f4d2826": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
+        "summary_list": [
+          "The average budget across all departments is approximately $503,419",
+          "Marketing and HR have the highest average budgets",
+          "Informed budget allocation can lead to more efficient use of resources"
+        ],
+        "suggestions": "1. What are the primary drivers of budget variance across departments?\n2. How do departmental budgets impact overall organizational performance?",
+        "rephrases": [
+          "What is the average budget for each department?",
+          "How do departmental budgets compare to one another?"
+        ],
+        "result": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
+        "structured_response": {
+          "EXECUTIVE INSIGHT": [
+            "Average budget varies significantly across departments",
+            "Understanding departmental budget averages can inform resource allocation decisions"
+          ],
+          "KEY FINDINGS": [
+            "The average budget for all departments is approximately $503,419",
+            "Departments with the highest average budgets are Marketing and HR"
+          ],
+          "BUSINESS IMPACT": [
+            "Informed budget allocation can lead to more efficient use of resources",
+            "Departments with higher average budgets may require more scrutiny and planning"
+          ],
+          "RECOMMENDED NEXT STEPS": [
+            "Analyze budget variance by department to identify areas for improvement",
+            "Develop targeted strategies for departments with high average budgets"
+          ],
+          "LIMITATIONS": [
+            "Analysis is limited to the provided dataset and may not reflect current or future budget allocations"
+          ]
+        },
+        "confidence": 0.9,
+        "source_columns": [
+          "Department",
+          "Budget"
+        ],
+        "code": "# single-call chat pipeline",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776071499.0277493,
+        "status": "ok"
+      },
+      "be4933cb33ce119dcccac75db9ba02f6c6348c80": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "",
+        "summary_list": [],
+        "suggestions": "",
+        "rephrases": [],
+        "result": "",
+        "code": "# queued due to rate limit",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776072323.593611,
+        "status": "queued",
+        "confidence": 0.0,
+        "source_columns": []
+      },
+      "515fe1db4620dbae4e952d30ca84641379e8e0fd": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "## Highest Actual Spending Department\nThe department with the highest actual spending in the most recent year can be determined by analyzing the 'Actual' column in the finance_data.csv dataset. To find this, we filter the data for the most recent year and then find the department with the maximum 'Actual' spending.\n## Next Steps\nReview the budget and actual spending of the identified department to identify areas for cost reduction.",
+        "summary_list": [
+          "The analysis will use the 'Year', 'Department', and 'Actual' columns from the finance_data.csv dataset",
+          "The most recent year's data will be used for the analysis"
+        ],
+        "suggestions": "1. What is the budget vs actual spending variance for the identified department?\n2. How does the actual spending of the identified department compare to the average actual spending of all departments?",
+        "rephrases": [
+          "Which department had the highest actual expenditure in the latest year?",
+          "What is the department with the highest actual spending in the current year?"
+        ],
+        "result": "## Highest Actual Spending Department\nThe department with the highest actual spending in the most recent year can be determined by analyzing the 'Actual' column in the finance_data.csv dataset. To find this, we filter the data for the most recent year and then find the department with the maximum 'Actual' spending.\n## Next Steps\nReview the budget and actual spending of the identified department to identify areas for cost reduction.",
+        "structured_response": {
+          "EXECUTIVE INSIGHT": [
+            "The highest actual spending department can be identified by analyzing the 'Actual' column in the finance_data.csv dataset"
+          ],
+          "KEY FINDINGS": [
+            "The most recent year's data will be used for the analysis"
+          ],
+          "BUSINESS IMPACT": [
+            "Understanding the department with the highest actual spending can help in budget allocation and cost optimization"
+          ],
+          "RECOMMENDED NEXT STEPS": [
+            "Review the budget and actual spending of the identified department to identify areas for cost reduction"
+          ],
+          "LIMITATIONS": [
+            "The analysis is limited to the data available in the finance_data.csv dataset"
+          ]
+        },
+        "confidence": 0.9,
+        "source_columns": [
+          "Year",
+          "Department",
+          "Actual"
+        ],
+        "code": "# single-call chat pipeline",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776072891.5349205,
+        "status": "ok"
+      },
+      "031c123326dbce0fe68e1b577bdb2d24ca53c41e": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "",
+        "summary_list": [],
+        "suggestions": "",
+        "rephrases": [],
+        "result": "",
+        "code": "# queued due to rate limit",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776073635.6628494,
+        "status": "queued",
+        "confidence": 0.0,
+        "source_columns": []
+      },
+      "7a256d913379c6e8888f7f035e9297ce0d6163d9": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "# Variance Pct Trend Analysis\n      The trend of Variance Pct over the last 5 years shows fluctuations, with values ranging from -12.15% to 9.45%.\n      ## Key Findings\n      * Average Variance Pct: approximately -1.5%\n      * Highest Variance Pct: 9.45% in Operations\n      * Lowest Variance Pct: -12.15% in HR\n      ## Recommendations\n      Conduct department-level analysis and develop strategies to improve budget accuracy.",
+        "summary_list": [
+          "Variance Pct has fluctuated over the last 5 years, with an average of -1.5%.",
+          "The highest Variance Pct was 9.45% in Operations, and the lowest was -12.15% in HR.",
+          "Analyzing Variance Pct trends can inform financial planning and resource allocation."
+        ],
+        "suggestions": "1. What are the primary drivers of variance in the Operations department?\n2. How can the budgeting process be improved to reduce variance?",
+        "rephrases": [
+          "What is the historical trend of budget variance percentage?",
+          "How has the variance percentage changed over the last 5 years?"
+        ],
+        "result": "# Variance Pct Trend Analysis\n      The trend of Variance Pct over the last 5 years shows fluctuations, with values ranging from -12.15% to 9.45%.\n      ## Key Findings\n      * Average Variance Pct: approximately -1.5%\n      * Highest Variance Pct: 9.45% in Operations\n      * Lowest Variance Pct: -12.15% in HR\n      ## Recommendations\n      Conduct department-level analysis and develop strategies to improve budget accuracy.",
+        "structured_response": {
+          "EXECUTIVE INSIGHT": [
+            "The trend of Variance Pct over the last 5 years indicates fluctuations in budget accuracy.",
+            "Understanding this trend can inform financial planning and resource allocation."
+          ],
+          "KEY FINDINGS": [
+            "Variance Pct has fluctuated between -12.15% and 9.45% over the last 5 years.",
+            "The average Variance Pct over this period is approximately -1.5%."
+          ],
+          "BUSINESS IMPACT": [
+            "Inaccurate budgeting can lead to inefficient resource allocation and potential financial losses.",
+            "Analyzing Variance Pct trends can help identify areas for improvement in budgeting processes."
+          ],
+          "RECOMMENDED NEXT STEPS": [
+            "Conduct a department-level analysis to identify areas with the highest variance.",
+            "Develop strategies to improve budget accuracy and reduce variance."
+          ],
+          "LIMITATIONS": [
+            "The analysis is limited to the provided 5-year dataset and may not reflect longer-term trends."
+          ]
+        },
+        "confidence": 0.9,
+        "source_columns": [
+          "Year",
+          "Variance Pct"
+        ],
+        "code": "# single-call chat pipeline",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776074558.6908925,
+        "status": "ok"
+      },
+      "3f979f87d71eee7b3bea28f4d9f12a7c70f9c36e": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "",
+        "summary_list": [],
+        "suggestions": "",
+        "rephrases": [],
+        "result": "",
+        "code": "# queued due to rate limit",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776074581.6838212,
+        "status": "queued",
+        "confidence": 0.0,
+        "source_columns": []
+      },
+      "8e1afccafd3287ef4ef9c2f001ddb35111670479": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "",
+        "summary_list": [],
+        "suggestions": "",
+        "rephrases": [],
+        "result": "",
+        "code": "# queued due to rate limit",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776074594.7748358,
+        "status": "queued",
+        "confidence": 0.0,
+        "source_columns": []
+      },
+      "ff649119bace1de39505df6b828336155613410d": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "",
+        "summary_list": [],
+        "suggestions": "",
+        "rephrases": [],
+        "result": "",
+        "code": "# queued due to rate limit",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776074627.68512,
+        "status": "queued",
+        "confidence": 0.0,
+        "source_columns": []
+      },
+      "24c1f0499e4df3c92336fa92353eccdcfcf0a7e8": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "AI request failed: Invalid control character at: line 26 column 16 (char 1313)",
+        "summary_list": [
+          "The assistant could not complete this request right now."
+        ],
+        "suggestions": "",
+        "rephrases": [],
+        "result": "AI request failed: Invalid control character at: line 26 column 16 (char 1313)",
+        "code": "# single-call pipeline failed",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776075987.598543,
+        "status": "error"
+      },
+      "5e60c2cdf11416087e457ef7399e54e6aadc333b": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "# Analysis of Budget and Actual Difference\nThe year with the largest difference between budget and actual can be identified by analyzing the variance in the finance_data.csv dataset.\n## Key Findings\n* The largest difference between budget and actual can be determined by calculating the absolute variance for each year.\n* The year with the highest absolute variance will have the largest difference between budget and actual.",
+        "summary_list": [
+          "The finance_data.csv dataset contains financial data including budget and actual values for each year.",
+          "The largest difference between budget and actual can be determined by calculating the absolute variance for each year.",
+          "Identifying the year with the largest difference can inform financial planning and resource allocation decisions."
+        ],
+        "suggestions": "1. What are the underlying factors contributing to the largest difference between budget and actual?\n2. How can the organization improve financial forecasting to reduce the difference between budget and actual?",
+        "rephrases": [
+          "Which year had the greatest disparity between planned and actual financials?",
+          "What year experienced the largest budget variance?"
+        ],
+        "result": "# Analysis of Budget and Actual Difference\nThe year with the largest difference between budget and actual can be identified by analyzing the variance in the finance_data.csv dataset.\n## Key Findings\n* The largest difference between budget and actual can be determined by calculating the absolute variance for each year.\n* The year with the highest absolute variance will have the largest difference between budget and actual.",
+        "structured_response": {
+          "EXECUTIVE INSIGHT": [
+            "The year with the largest difference between budget and actual can be identified by analyzing the variance in the finance_data.csv dataset.",
+            "This insight can help inform financial planning and resource allocation decisions."
+          ],
+          "KEY FINDINGS": [
+            "The largest difference between budget and actual can be determined by calculating the absolute variance for each year.",
+            "The year with the highest absolute variance will have the largest difference between budget and actual."
+          ],
+          "BUSINESS IMPACT": [
+            "Identifying the year with the largest difference between budget and actual can help organizations understand where financial planning may have been inaccurate.",
+            "This understanding can lead to improved financial forecasting and decision-making."
+          ],
+          "RECOMMENDED NEXT STEPS": [
+            "Analyze the finance_data.csv dataset to calculate the absolute variance for each year.",
+            "Identify the year with the highest absolute variance and review the underlying factors contributing to the difference."
+          ],
+          "LIMITATIONS": [
+            "The analysis is limited to the data available in the finance_data.csv dataset."
+          ]
+        },
+        "confidence": 0.9,
+        "source_columns": [
+          "Year",
+          "Budget",
+          "Actual"
+        ],
+        "code": "# single-call chat pipeline",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776077383.2402158,
+        "status": "ok"
+      },
+      "911a42e6d72ef1d8780779a8a99d57617a4d4213": {
+        "intent": "analysis",
+        "query_rejected": false,
+        "ai_response": "AI request failed: Expecting value: line 1 column 1 (char 0)",
+        "summary_list": [
+          "The assistant could not complete this request right now."
+        ],
+        "suggestions": "",
+        "rephrases": [],
+        "result": "AI request failed: Expecting value: line 1 column 1 (char 0)",
+        "code": "# single-call pipeline failed",
+        "chart_data": null,
+        "chart_figs": [],
+        "insight": "",
+        "last_api_call_ts": 1776077420.002785,
+        "status": "error"
+      }
+    },
+    "chat_history": [
+      {
+        "query": "What is the average Budget by Department?",
+        "result": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
+        "code": "# single-call chat pipeline",
+        "chart_data": null,
+        "insight": "",
+        "summary": [
+          "The average budget across all departments is approximately $503,419",
+          "Marketing and HR have the highest average budgets",
+          "Informed budget allocation can lead to more efficient use of resources"
+        ],
+        "charts": [],
+        "ai_response": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
+        "suggestions": "1. What are the primary drivers of budget variance across departments?\n2. How do departmental budgets impact overall organizational performance?",
+        "query_rejected": false,
+        "confidence": 0.9,
+        "source_columns": [
+          "Department",
+          "Budget"
+        ],
+        "intent": "analysis",
+        "rephrases": []
+      }
+    ],
+    "analysis_history": [
+      {
+        "query": "What is the average Budget by Department?",
+        "result": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
+        "code": "# single-call chat pipeline",
+        "insight": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
+        "ai_response": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets",
+        "charts": [],
+        "summary": [
+          "The average budget across all departments is approximately $503,419",
+          "Marketing and HR have the highest average budgets",
+          "Informed budget allocation can lead to more efficient use of resources"
+        ],
+        "intent": "analysis",
+        "confidence": 0.9,
+        "source_columns": [
+          "Department",
+          "Budget"
+        ]
+      }
+    ],
+    "result_history": [
+      "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets"
+    ],
+    "result_history_details": [
+      {
+        "query": "What is the average Budget by Department?",
+        "intent": "analysis",
+        "result_type": "text",
+        "key_columns": [],
+        "chartable": false,
+        "result_shape": null,
+        "query_rejected": false
+      }
+    ],
+    "recent_activity": [
+      {
+        "kind": "question",
+        "description": "What is the average Budget by Department?"
+      },
+      {
+        "kind": "question",
+        "description": "How does the actual spending of the identified department compare to the average actual spending of all departments?"
+      },
+      {
+        "kind": "question",
+        "description": "Which Department has the highest Actual spending in the most recent Year?"
+      },
+      {
+        "kind": "question",
+        "description": "How can the organization improve financial forecasting to reduce the difference between budget and actual?"
+      },
+      {
+        "kind": "question",
+        "description": "Which Year had the largest difference between Budget and Actual?"
+      },
+      {
+        "kind": "question",
+        "description": "How does the actual spending of the identified department compare to the average actual spending of all departments?"
+      },
+      {
+        "kind": "question",
+        "description": "Which Department has the highest Actual spending in the most recent Year?"
+      },
+      {
+        "kind": "question",
+        "description": "Which Department has the highest Actual spending in the most recent Year?"
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the average Budget by Department?"
+      },
+      {
+        "role": "assistant",
+        "content": "# Average Budget by Department\n      The average budget across all departments is approximately $503,419.\n      ## Key Findings:\n      * The average budget for all departments is approximately $503,419\n      * Departments with the highest average budgets are Marketing and HR\n      ## Recommendations:\n      * Analyze budget variance by department to identify areas for improvement\n      * Develop targeted strategies for departments with high average budgets"
+      }
+    ]
+  },
+  "demo-provenance": {
+    "chat_history": [
+      {
+        "query": "q",
+        "confidence": 0.8,
+        "source_columns": [
+          "A"
+        ]
+      }
+    ],
+    "analysis_history": [
+      {
+        "intent": "analysis"
+      }
+    ],
+    "response_cache": {}
+  },
+  "test-dataset-v1": {
+    "response_cache": {
+      "abc123def456": {
+        "confidence": 0.85,
+        "source_columns": [
+          "Revenue",
+          "Customer_Count"
+        ],
+        "ai_response": "The revenue shows a strong upward trend.",
+        "intent": "analysis",
+        "query_rejected": false
+      }
+    }
+  }
+}

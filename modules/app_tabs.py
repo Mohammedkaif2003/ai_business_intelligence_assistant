@@ -1,4 +1,5 @@
 import html
+import hashlib
 import re
 import time
 
@@ -6,30 +7,28 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from modules.ai_code_generator import generate_analysis_code
-from modules.ai_conversation import generate_conversational_response
+from modules.chat_handler import chat_handler
+from modules.chat_handler import generate_ai_dataset_questions
 from modules.auto_insights import generate_auto_insights
 from modules.auto_visualizer import auto_visualize, validate_chart_data
-from modules.code_executor import execute_code
 from modules.forecasting import forecast_revenue
 from modules.insight_engine import generate_business_insight
 from modules.kpi_engine import generate_kpis
-from modules.query_utils import (
-    add_date_filter,
-    add_filters,
-    build_clarification_prompt,
-    build_rephrase_suggestions,
-    classify_query_intent,
-    detect_simple_query,
-    enhance_query,
-    get_irrelevant_query_message,
-    is_dataset_related_query,
-    is_memory_query,
-)
 from modules.report_generator import generate_pdf
 from modules.text_utils import clean_text, structure_response
 from modules.app_state import add_recent_activity, persist_analysis_cycle
-from modules.app_perf import record_timing
+from modules.app_state import persist_dataset_state
+from modules.prompt_cache import (
+    get_cached_try_asking_questions,
+    save_cached_try_asking_questions,
+    get_cached_response,
+    save_cached_response,
+    cleanup_stale_cache,
+    clear_cache_for_dataset,
+)
+from modules.cache_metrics import record_cache_hit, record_cache_miss, get_cache_stats
+from modules.request_queue import queue_request, try_process_queue, get_queue_stats, is_api_unavailable
+from modules.query_optimizer import find_similar_cached_response, _similarity_score
 from modules.app_views import (
     init_analysis_state,
     render_chart_collection,
@@ -54,15 +53,34 @@ from modules.app_logic import (
 )
 from ui_components import (
     render_assistant_bubble,
+    render_cache_statistics,
     render_chart_card,
     render_insight_card,
     render_kpi_cards,
+    render_quality_badge,
+    render_queue_status,
     render_result_status,
     render_section_header,
+    render_settings_panel,
     render_structured_response,
     render_table_panel,
     render_user_bubble,
 )
+
+
+def _queue_query(query_text: str):
+    cleaned = str(query_text or "").strip()
+    if not cleaned:
+        return
+    st.session_state["pending_query"] = cleaned
+    st.session_state["pending_query_id"] = str(time.time_ns())
+    st.session_state["active_page"] = "chat"
+
+
+def _query_cache_key(query: str, dataset_key: str | None) -> str:
+    normalized = " ".join(str(query or "").strip().lower().split())
+    source = f"{dataset_key or 'dataset'}::{normalized}".encode("utf-8")
+    return hashlib.sha1(source).hexdigest()
 
 
 def _pick_preferred_column(columns: list[str], keywords: list[str]) -> str | None:
@@ -170,12 +188,58 @@ def _generate_dynamic_query_suggestions(
     return suggestions[:5]
 
 
+def _get_ai_try_asking_suggestions(df: pd.DataFrame, schema: dict | None = None, force_regenerate: bool = False) -> list[str]:
+    """
+    Get 'Try Asking' question suggestions for the dataset.
+    
+    Uses rule-based generation scaled to dataset complexity (no API calls).
+    
+    Args:
+        df: Dataset
+        schema: Dataset schema
+        force_regenerate: Force new generation (ignore cache)
+    
+    Returns:
+        List of suggestion questions
+    """
+    schema = schema or {}
+    dataset_key = str(st.session_state.get("active_dataset_cache_key") or st.session_state.get("active_dataset_key") or st.session_state.get("dataset_name") or "dataset")
+    cache_key = f"ai_try_asking_questions::{dataset_key}"
+
+    # Check session cache first (fastest)
+    if not force_regenerate:
+        cached = st.session_state.get(cache_key)
+        if isinstance(cached, list) and cached:
+            return cached
+
+        # Check disk cache (persisted across restarts)
+        persisted = get_cached_try_asking_questions(dataset_key)
+        if persisted:
+            st.session_state[cache_key] = persisted
+            return st.session_state[cache_key]
+
+    # Generate using rule-based logic (zero API costs)
+    from modules.chat_handler import generate_try_asking_suggestions
+    
+    try:
+        questions = generate_try_asking_suggestions(df, schema, st.session_state.get("dataset_name"))
+    except Exception:
+        questions = []
+
+    if not questions:
+        return []
+
+    saved_questions = save_cached_try_asking_questions(dataset_key, questions)
+    st.session_state[cache_key] = saved_questions
+    return st.session_state[cache_key]
+
+
 def _render_try_asking_section(df: pd.DataFrame, schema: dict | None = None):
-    suggestions = _generate_dynamic_query_suggestions(df, schema, st.session_state.get("dataset_name"))
+    suggestions = _get_ai_try_asking_suggestions(df, schema)
     if not suggestions:
         return
 
-    st.markdown('<div class="ai-theme-box">', unsafe_allow_html=True)
+    # Keep this section simple to avoid extra visual artifacts.
     st.markdown("#### Try asking")
     for start in range(0, len(suggestions), 3):
         row_items = suggestions[start:start + 3]
@@ -183,10 +247,8 @@ def _render_try_asking_section(df: pd.DataFrame, schema: dict | None = None):
         for offset, suggestion in enumerate(row_items):
             idx = start + offset
             with chip_cols[offset]:
-                if st.button(suggestion, key=f"try_asking_{idx}", use_container_width=True):
-                    st.session_state.auto_query = suggestion
-                    st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+                if st.button(suggestion, key=f"try_asking_{idx}", width="stretch"):
+                    _queue_query(suggestion)
 
 
 def render_data_overview_tab(df: pd.DataFrame):
@@ -252,6 +314,20 @@ def render_data_overview_tab(df: pd.DataFrame):
 
 
 def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
+    # Cleanup stale cache periodically (prevent unbounded growth)
+    # This runs once per tab render, fairly harmless since it's cached on disk
+    try:
+        cleanup_stale_cache(max_cache_entries_per_dataset=100, max_age_seconds=604800)  # 7 days
+    except Exception:
+        pass  # Silently ignore cleanup failures
+    
+    # Render settings panel in sidebar
+    ai_settings = render_settings_panel()
+    
+    # Render cache statistics in sidebar
+    cache_stats = get_cache_stats()
+    render_cache_statistics(cache_stats)
+    
     st.markdown(
         """
     <div class="chat-shell">
@@ -273,7 +349,12 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         st.session_state.chat_history = []
         st.session_state.messages = []
         st.session_state.analysis_history = []
-        st.rerun()
+        st.session_state.result_history = []
+        st.session_state.result_history_details = []
+        st.session_state.pending_query = ""
+        st.session_state.pending_query_id = ""
+        st.session_state.last_processed_query_id = ""
+        persist_dataset_state()
 
     st.markdown("</div>", unsafe_allow_html=True)
     init_analysis_state()
@@ -281,299 +362,225 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     for entry in st.session_state.chat_history:
         render_chat_history_entry(entry)
 
-    _render_try_asking_section(df, schema)
+    # Render try-asking suggestions in an expander to save space and API calls
+    # (suggestions are lazy-loaded only when user expands the section)
+    with st.expander("💡 Try asking...", expanded=False):
+        _render_try_asking_section(df, schema)
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-    query = st.chat_input("Ask anything about your data...", key="analyst_chat_input")
+    is_processing = bool(st.session_state.get("chat_processing", False))
+    submitted_query = st.chat_input(
+        "Ask anything about your data...",
+        key="analyst_chat_input",
+        disabled=is_processing,
+    )
 
     if "auto_query" in st.session_state:
-        query = st.session_state.auto_query
+        submitted_query = st.session_state.get("auto_query")
         del st.session_state.auto_query
 
+    if submitted_query:
+        _queue_query(submitted_query)
+
+    query = st.session_state.get("pending_query", "")
+    query_id = st.session_state.get("pending_query_id", "")
     if not query:
         return
+
+    # Streamlit reruns can execute this function multiple times; process each query id once.
+    if query_id and st.session_state.get("last_processed_query_id") == query_id:
+        return
+
+    dataset_key = str(st.session_state.get("active_dataset_key") or st.session_state.get("dataset_name") or "dataset")
+    dataset_cache_key = str(st.session_state.get("active_dataset_cache_key") or "")
+    
+    # Build cache key for this query
+    query_hash = _query_cache_key(query, dataset_key)
+    cache_key = f"chat_response_cache::{query_hash}"
+    
+    # Try session cache first (fast path)
+    cached_outcome = st.session_state.get(cache_key)
+    if isinstance(cached_outcome, dict):
+        outcome = cached_outcome
+    else:
+        outcome = None
+    
+    # If not in session, try disk cache (persistent across restarts)
+    if outcome is None and dataset_cache_key:
+        disk_cached = get_cached_response(dataset_cache_key, query_hash)
+        if disk_cached:
+            outcome = disk_cached
+            st.session_state[cache_key] = outcome  # Restore to session
+    
+    # If still not found, check for SIMILAR queries in cache (deduplication)
+    # e.g., "What is revenue?" matches cached "Show me revenue"
+    if outcome is None and dataset_cache_key:
+        # Get all cached responses for this dataset to find similar ones
+        # This uses a simple approach - in production, could optimize with vector DB
+        all_dataset_responses = {}
+        try:
+            from modules.prompt_cache import _load_cache_data
+            cache_data = _load_cache_data()
+            dataset_entry = cache_data.get(dataset_cache_key, {})
+            all_dataset_responses = dataset_entry.get("response_cache", {})
+        except Exception:
+            all_dataset_responses = {}
+        
+        if all_dataset_responses:
+            similar_cached_query, similar_response = find_similar_cached_response(
+                query,
+                all_dataset_responses,
+                similarity_threshold=0.80,  # 80% match
+            )
+            if similar_response and similar_cached_query:
+                outcome = similar_response
+                st.session_state[cache_key] = outcome  # Cache this too
+                # Log the deduplication
+                if logger:
+                    similarity = _similarity_score(query, similar_cached_query)
+                    logger.info(
+                        "query_deduplication_hit",
+                        extra={
+                            "original_query": query[:100],
+                            "similar_cached_query": similar_cached_query[:100],
+                            "similarity": similarity,
+                        },
+                    )
+    
+    # Track cache hit/miss metrics
+    if outcome is not None:
+        if dataset_cache_key:
+            record_cache_hit(dataset_cache_key, query_hash)
+    else:
+        if dataset_cache_key:
+            record_cache_miss(dataset_cache_key, query_hash)
 
     add_recent_activity("question", query)
     logger.info("chat_query_received", extra={"query": query[:200], "rows": len(df), "cols": len(df.columns)})
     render_user_bubble(query)
+    st.session_state["chat_processing"] = True
 
-    ai_response = ""
-    suggestions = ""
-    summary_list = []
-    query_rejected = False
-    intent_started = time.perf_counter()
-    intent_info = classify_query_intent(query, df, schema)
-    logger.info(
-        "chat_intent_classified",
-        extra={
-            "intent": intent_info.get("intent"),
-            "needs_clarification": intent_info.get("needs_clarification"),
-            "intent_ms": round((time.perf_counter() - intent_started) * 1000, 2),
-        },
-    )
-    record_timing("chat_intent_ms", (time.perf_counter() - intent_started) * 1000)
-    rephrase_suggestions = build_rephrase_suggestions(query, df, schema, intent=intent_info.get("intent"))
+    try:
+        if outcome is None:
+            with st.spinner("🔍 AI analyzing your dataset..."):
+                outcome = chat_handler(
+                    query=query,
+                    df=df,
+                    schema=schema,
+                    dataset_name=st.session_state.get("dataset_name"),
+                    logger=logger,
+                    last_api_call_ts=float(st.session_state.get("last_api_call_ts", 0.0) or 0.0),
+                    min_call_interval_seconds=1.0,
+                    result_history=st.session_state.get("result_history", []),
+                    result_history_details=st.session_state.get("result_history_details", []),
+                )
+            st.session_state[cache_key] = outcome
+            
+            # Also save to disk cache for persistence across restarts
+            if dataset_cache_key:
+                save_cached_response(dataset_cache_key, query_hash, outcome)
 
-    with st.spinner("🔍 AI analyzing your dataset..."):
-        execution_started = time.perf_counter()
-        if intent_info.get("needs_clarification"):
-            logger.info("chat_query_clarification_needed", extra={"intent": intent_info.get("intent")})
-            ai_response = build_clarification_prompt(query, df, schema)
-            code = "# Clarification requested before analysis"
-            result = ai_response
-            execution_output = result
-            ai_charts = []
-            chart_data = None
-            insight = ""
-            chart_figs = []
-            query_rejected = True
-        elif not is_dataset_related_query(query, df, schema):
-            logger.info("chat_query_rejected_not_dataset_related", extra={"intent": intent_info.get("intent")})
-            ai_response = get_irrelevant_query_message(schema)
-            code = "# Query rejected as unrelated to the active dataset"
-            result = ai_response
-            execution_output = result
-            ai_charts = []
-            chart_data = None
-            insight = ""
-            chart_figs = []
-            query_rejected = True
-        else:
-            enhanced_query = add_date_filter(add_filters(enhance_query(query, df), df), df)
-            simple_code = detect_simple_query(query, df)
+        st.session_state["last_api_call_ts"] = float(outcome.get("last_api_call_ts", time.time()))
 
-            if is_memory_query(query) and "result_history_details" in st.session_state:
-                logger.info("chat_query_memory_mode", extra={"history_len": len(st.session_state.get("result_history", []))})
-                history = st.session_state.get("result_history", [])
-                detailed_history = st.session_state.get("result_history_details", [])
+        ai_response = outcome.get("ai_response", "")
+        result = outcome.get("result", ai_response)
+        chart_data = outcome.get("chart_data")
+        chart_figs = outcome.get("chart_figs", [])
+        suggestions = outcome.get("suggestions", "")
+        summary_list = outcome.get("summary_list", [])
+        query_rejected = bool(outcome.get("query_rejected", False))
+        insight = outcome.get("insight", "")
+        code = outcome.get("code", "# single-call chat pipeline")
+        intent = outcome.get("intent", "analysis")
+        structured_response = outcome.get("structured_response") or {}
+        response_status = str(outcome.get("status", "ok"))  # "ok", "queued", "error"
+        confidence = outcome.get("confidence", 0.0)  # Extracted from outcome
+        source_columns = outcome.get("source_columns", [])  # Extracted from outcome
 
-                if len(history) >= 2:
-                    last = history[-1]
-                    prev = history[-2]
-                    last_meta = detailed_history[-1] if len(detailed_history) >= 1 else {}
-                    prev_meta = detailed_history[-2] if len(detailed_history) >= 2 else {}
+        if isinstance(result, pd.DataFrame) and not result.empty:
+            chart_data = result
+        elif isinstance(result, pd.Series):
+            try:
+                chart_data = result.reset_index()
+            except ValueError:
+                chart_data = result.reset_index(drop=True).to_frame()
+            if chart_data.shape[1] == 2:
+                chart_data.columns = ["Category", "Value"]
 
-                    try:
-                        if isinstance(last, (int, float)) and isinstance(prev, (int, float)):
-                            result = last - prev
-                        elif isinstance(last, pd.DataFrame) and isinstance(prev, pd.DataFrame):
-                            result = last.copy()
-                            num_cols = last.select_dtypes(include="number").columns
-                            for col in num_cols:
-                                if col in prev.columns:
-                                    result[f"{col}_diff"] = last[col] - prev[col]
-                        else:
-                            result = (
-                                f"Comparison not supported for the last two results. "
-                                f"The previous result type was {prev_meta.get('result_type', 'unknown')} and "
-                                f"the latest result type was {last_meta.get('result_type', 'unknown')}."
-                            )
-                    except Exception:
-                        result = last
+        # Handle queued requests (rate-limited but will retry automatically)
+        if response_status == "queued":
+            st.info(
+                "⏳ **Working on your answer**\n\n"
+                "We are preparing your insight. This can take a few extra seconds during busy times."
+            )
+            queue_stats = get_queue_stats()
+            if queue_stats.get("length", 0) > 0:
+                render_queue_status(queue_stats)
+            st.session_state["chat_processing"] = False
+            return
 
-                    code = "# Compared last two results"
-                    execution_output = result
-                else:
-                    result = "Need at least two results to compare."
-                    code = "# Only one result available"
-                    execution_output = result
+        if ai_response:
+            clean_response = clean_text(ai_response)
+            if not summary_list and not query_rejected and not is_error_like_text(ai_response):
+                summary_list = build_ai_summary_fallback(ai_response)
+
+            clean_response = re.sub(r"<[^>]+>", "", clean_response)
+            
+            # Display queue status if requests are waiting
+            queue_stats = get_queue_stats()
+            render_queue_status(queue_stats)
+            
+            # Render quality badge with confidence and source columns
+            render_quality_badge(confidence, source_columns)
+            
+            if structured_response and any(structured_response.values()):
+                render_structured_response(structured_response)
             else:
-                if simple_code:
-                    logger.info("chat_query_simple_code_path", extra={"intent": intent_info.get("intent")})
-                    code = simple_code
-                    execution_output = execute_code(f"charts = []\nresult = {simple_code}", df)
+                structured = structure_response(clean_response)
+                if structured and any(structured.values()):
+                    render_structured_response(structured)
                 else:
-                    logger.info("chat_query_ai_code_path", extra={"intent": intent_info.get("intent")})
-                    code = generate_analysis_code(api_key, enhanced_query, df, schema)
-                    execution_output = execute_code(code, df)
+                    render_assistant_bubble(clean_response)
 
-            ai_charts = []
 
-        logger.info(
-            "chat_execution_completed",
-            extra={
-                "intent": intent_info.get("intent"),
-                "query_rejected": query_rejected,
-                "execution_ms": round((time.perf_counter() - execution_started) * 1000, 2),
-            },
-        )
-        record_timing("chat_execution_ms", (time.perf_counter() - execution_started) * 1000)
 
-    if isinstance(execution_output, tuple):
-        result, ai_charts = execution_output
-    else:
-        result = execution_output
+        chart_validation_warnings = []
+        if isinstance(chart_data, pd.DataFrame) and chart_data.empty:
+            st.warning("No outliers found in the dataset based on the current criteria.")
+            chart_data = None
 
-    logger.info(
-        "chat_query_executed",
-        extra={
-            "intent": intent_info.get("intent"),
-            "query_rejected": query_rejected,
-            "result_type": type(result).__name__,
-            "has_charts": bool(ai_charts),
-        },
-    )
-
-    chart_data = None
-    insight = ""
-    chart_figs = []
-    chart_validation_warnings = []
-
-    if isinstance(result, pd.DataFrame):
-        chart_data = result
-    elif isinstance(result, pd.Series):
-        try:
-            chart_data = result.reset_index()
-        except ValueError:
-            chart_data = result.reset_index(drop=True).to_frame()
-        if chart_data.shape[1] == 2:
-            chart_data.columns = ["Category", "Value"]
-
-    result_str = str(result)
-    is_axes_result = "<Axes:" in result_str or "<AxesSubplot" in result_str
-    if is_axes_result and chart_data is None:
-        result = "The analysis generated visual charts. Please see the AI response below for a summary of the data patterns."
-
-    is_error = isinstance(result, str) and any(keyword in result.lower() for keyword in ["traceback", "exception", "syntaxerror"])
-    if isinstance(result, pd.DataFrame) and not result.empty:
-        chart_data = result
-
-    if is_error:
-        with st.spinner("💭 AI is thinking..."):
-            ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
-    else:
         if chart_data is not None:
-            insight = generate_business_insight(chart_data)
+            render_dataframe_result(chart_data, f"live_table_{hash(query)}")
+            if not chart_figs:
+                _, chart_validation_warnings = validate_chart_data(chart_data)
+                chart_figs = auto_visualize(chart_data)
 
-        with st.spinner("💭 Preparing response..."):
-            response_started = time.perf_counter()
-            if is_memory_query(query):
-                history = st.session_state.get("result_history", [])
-                detailed_history = st.session_state.get("result_history_details", [])
+            if chart_figs:
+                render_result_status(
+                    "Chart generated",
+                    "The result shape supports visualization, so charts are shown below with chart-type options and download tools.",
+                    kind="success",
+                )
+                render_chart_collection(chart_figs)
+            elif not query_rejected:
+                if chart_validation_warnings:
+                    for warning in chart_validation_warnings:
+                        st.caption(warning)
+                render_result_status(
+                    "No chart shown",
+                    "This result is valid, but it does not have a chart-friendly shape. Try grouping by a category or time column.",
+                    kind="info",
+                )
 
-                if len(history) < 2:
-                    ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
-                else:
-                    try:
-                        last = history[-1]
-                        prev = history[-2]
-                        last_meta = detailed_history[-1] if len(detailed_history) >= 1 else {}
-                        prev_meta = detailed_history[-2] if len(detailed_history) >= 2 else {}
-
-                        try:
-                            last_val = float(last)
-                            prev_val = float(prev)
-
-                            diff = last_val - prev_val
-                            growth = (diff / prev_val * 100) if prev_val != 0 else 0
-
-                            if diff > 0:
-                                trend = "Increasing 📈"
-                            elif diff < 0:
-                                trend = "Decreasing 📉"
-                            else:
-                                trend = "No change ➡"
-
-                            ai_response = f"""
-                📊 Difference: {diff:,.2f}
-
-                📈 Growth: {growth:.2f}%
-
-                📌 Trend: {trend}
-                """
-                        except (TypeError, ValueError):
-                            if isinstance(last, pd.DataFrame) and isinstance(prev, pd.DataFrame):
-                                ai_response = "📊 Comparison completed (difference columns added)."
-                            else:
-                                ai_response = (
-                                    "I understood this as a comparison request, but the last two saved results "
-                                    f"cannot be compared directly ({prev_meta.get('result_type', 'unknown')} vs "
-                                    f"{last_meta.get('result_type', 'unknown')})."
-                                )
-                    except Exception:
-                        ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
-
-            if not ai_response:
-                try:
-                    ai_response = generate_conversational_response(query=query, result=result, insight=insight, df=df)
-                except Exception:
-                    ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
-
-            logger.info(
-                "chat_response_prepared",
-                extra={
-                    "intent": intent_info.get("intent"),
-                    "response_ms": round((time.perf_counter() - response_started) * 1000, 2),
-                },
-            )
-            record_timing("chat_response_ms", (time.perf_counter() - response_started) * 1000)
-
-    if ai_response:
-        clean_response = clean_text(ai_response)
-        summary_list = build_summary_list(result, chart_data, query_rejected)
-        if not summary_list and not query_rejected and not is_error_like_text(ai_response):
-            summary_list = build_ai_summary_fallback(ai_response)
-
-        clean_response = re.sub(r"<[^>]+>", "", clean_response)
-        structured = structure_response(clean_response)
-
-        if structured and any(structured.values()):
-            render_structured_response(structured)
-        else:
-            render_assistant_bubble(clean_response)
-
-    if isinstance(chart_data, pd.DataFrame) and chart_data.empty:
-        st.warning("No outliers found in the dataset based on the current criteria.")
-        chart_data = None
-
-    if chart_data is not None:
-        render_dataframe_result(chart_data, f"live_table_{hash(query)}")
-
-        if ai_charts:
-            chart_figs = ai_charts
-
-        if not chart_figs and chart_data is not None:
-            _, chart_validation_warnings = validate_chart_data(chart_data)
-            chart_figs = auto_visualize(chart_data)
-
-        if chart_figs:
-            render_result_status(
-                "Chart generated",
-                "The result shape supports visualization, so charts are shown below with chart-type options and download tools.",
-                kind="success",
-            )
-            render_chart_collection(chart_figs)
-        elif not query_rejected:
-            if chart_validation_warnings:
-                for warning in chart_validation_warnings:
-                    st.caption(warning)
-            render_result_status(
-                "No chart shown",
-                "This result is valid, but it does not have a chart-friendly shape. Try grouping by a category or time column.",
-                kind="info",
-            )
-            suggested_queries = build_graphable_query_suggestions(df, schema, st.session_state.get("dataset_name"))
-            if suggested_queries:
-                st.markdown("**Try one of these graph-friendly questions:**")
-                for idx, suggestion in enumerate(suggested_queries):
-                    if st.button(suggestion, key=f"graphable_prompt_{hash(query)}_{idx}", use_container_width=True):
-                        st.session_state.auto_query = suggestion
-                        st.rerun()
-
-        if insight:
-            render_insight_card(insight)
-    else:
-        if isinstance(result, dict):
-            has_displayable = render_dict_result(result, f"dict_result_{hash(query)}")
-            if not has_displayable and not ai_response:
-                st.info("The AI analyzed the data but the result format couldn't be displayed as a table.")
+            if chart_data is not None and not insight:
+                insight = generate_business_insight(chart_data)
+            if insight:
+                render_insight_card(insight)
         elif not ai_response and str(result) != "None":
             st.markdown('<div class="glass-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
             st.write(str(result))
             st.markdown("</div>", unsafe_allow_html=True)
 
-    suggestions = ""
-    if ai_response:
         if summary_list:
             st.markdown('<div class="ai-theme-box">', unsafe_allow_html=True)
             with st.expander("Answer Summary", expanded=False):
@@ -581,36 +588,42 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
                     st.write("-", line)
             st.markdown("</div>", unsafe_allow_html=True)
 
-        if not query_rejected:
-            with st.spinner("Generating follow-up questions..."):
-                suggestions = build_follow_up_suggestions(query, df, schema, st.session_state.get("dataset_name"))
+        if suggestions and not query_rejected:
             render_follow_up_section(suggestions, f"live_suggestion_{hash(query)}")
 
-            if is_error_like_text(result) or is_error_like_text(ai_response):
-                st.markdown('<div class="ai-theme-box">', unsafe_allow_html=True)
-                st.markdown("**Suggested Rephrases**")
-                for idx, suggestion in enumerate(rephrase_suggestions):
-                    if st.button(suggestion, key=f"rephrase_prompt_{hash(query)}_{idx}", use_container_width=True):
-                        st.session_state.auto_query = suggestion
-                        st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
+        rephrase_suggestions = outcome.get("rephrases") or []
+        if (is_error_like_text(result) or is_error_like_text(ai_response)) and rephrase_suggestions:
+            st.markdown('<div class="ai-theme-box">', unsafe_allow_html=True)
+            st.markdown("**Suggested Rephrases**")
+            for idx, suggestion in enumerate(rephrase_suggestions):
+                if st.button(suggestion, key=f"rephrase_prompt_{hash(query)}_{idx}", width="stretch"):
+                    _queue_query(suggestion)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-    persist_analysis_cycle(
-        query=query,
-        result=result,
-        chart_data=chart_data,
-        chart_figs=chart_figs,
-        code=code,
-        insight=insight,
-        ai_response=ai_response,
-        summary_list=summary_list,
-        suggestions=suggestions,
-        query_rejected=query_rejected,
-        is_axes_result=is_axes_result,
-        intent=intent_info.get("intent"),
-        rephrases=rephrase_suggestions if (is_error_like_text(result) or is_error_like_text(ai_response)) else [],
-        result_history_entry=build_result_history_entry(query, result, chart_data, intent_info, query_rejected),
-    )
+        intent_info = {"intent": intent}
+        persist_analysis_cycle(
+            query=query,
+            result=result,
+            chart_data=chart_data,
+            chart_figs=chart_figs,
+            code=code,
+            insight=insight,
+            ai_response=ai_response,
+            summary_list=summary_list,
+            suggestions=suggestions,
+            query_rejected=query_rejected,
+            is_axes_result=False,
+            intent=intent,
+            rephrases=rephrase_suggestions if (is_error_like_text(result) or is_error_like_text(ai_response)) else [],
+            result_history_entry=build_result_history_entry(query, result, chart_data, intent_info, query_rejected),
+            confidence=confidence,
+            source_columns=source_columns,
+        )
+    finally:
+        st.session_state["chat_processing"] = False
+        st.session_state["last_processed_query_id"] = query_id
+        st.session_state["pending_query"] = ""
+        st.session_state["pending_query_id"] = ""
 
 
 def render_forecasting_tab(df: pd.DataFrame):
@@ -780,7 +793,7 @@ def render_reports_tab():
                 unsafe_allow_html=True,
             )
 
-            if st.button("Generate Professional PDF", type="primary", use_container_width=True):
+            if st.button("Generate Professional PDF", type="primary", width="stretch"):
                 with st.spinner("Compiling and formatting your professional report..."):
                     file_path = generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, analysis_history=history)
                 add_recent_activity("report", "PDF report created")
@@ -790,7 +803,7 @@ def render_reports_tab():
                         data=file,
                         file_name="AI_Executive_Report.pdf",
                         mime="application/pdf",
-                        use_container_width=True,
+                        width="stretch",
                     )
                 st.success("Report generated successfully!")
             st.markdown("</div></div>", unsafe_allow_html=True)

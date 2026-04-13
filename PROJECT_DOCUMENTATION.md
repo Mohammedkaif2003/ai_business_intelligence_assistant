@@ -40,7 +40,7 @@ scikit-learn, statsmodels, joblib, groq, python-dotenv, reportlab, kaleido
 ```
 ai_chatbat_cam_anaylz/
 │
-├── .env                              # Stores API keys (GROQ_API_KEY, GOOGLE_API_KEY)
+├── .env                              # Stores API key (GROQ_API_KEY)
 ├── .gitignore                        # Files to ignore in version control
 ├── app.py                            # Main Streamlit application
 ├── config.py                         # App constants, layout, & branding config

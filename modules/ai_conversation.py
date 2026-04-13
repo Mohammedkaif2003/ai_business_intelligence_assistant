@@ -3,8 +3,9 @@ import streamlit as st
 from dotenv import load_dotenv
 import pandas as pd
 from modules.app_secrets import get_secret
+from groq import Groq
 
-load_dotenv()
+load_dotenv(override=True)
 import re
 from html import unescape
 
@@ -22,8 +23,9 @@ def sanitize_ai_output(text: str) -> str:
     text = text.replace("```", "")
 
     return text.strip()
-GROQ_API_KEY = get_secret("GROQ_API_KEY")
-GOOGLE_API_KEY = get_secret("GOOGLE_API_KEY")
+def _is_rate_limit_error(error: Exception) -> bool:
+    text = str(error).lower()
+    return "429" in text or "too many requests" in text or "rate limit" in text
 
 # ═══════════════════════════════════════════════════
 #  SENIOR DATA ANALYST SYSTEM PROMPT
@@ -77,27 +79,27 @@ def _build_data_context(result, insight=""):
     """Build a rich data summary for the AI to analyze."""
     data_summary = ""
     if isinstance(result, pd.DataFrame):
+        numeric_cols = list(result.select_dtypes(include="number").columns[:6])
         stats = ""
-        numeric_cols = result.select_dtypes(include="number").columns
         if len(numeric_cols) > 0:
-            desc = result[numeric_cols].describe().to_string()
-            stats = f"\nStatistical summary:\n{desc}"
+            desc = result[numeric_cols].describe().round(2).to_string()
+            stats = f"\nNumeric summary:\n{desc}"
 
         data_summary = f"""Data returned: DataFrame with {result.shape[0]} rows and {result.shape[1]} columns.
 Columns: {', '.join(str(c) for c in result.columns)}
 First rows:
-{result.head(8).to_string(index=False)}
+{result.head(3).to_string(index=False)}
 {stats}
 """
     elif isinstance(result, pd.Series):
         data_summary = f"""Data returned: Series with {len(result)} values.
 Name: {result.name}
-{result.head(15).to_string()}
+{result.head(6).to_string()}
 """
     elif isinstance(result, str):
-        data_summary = f"Result: {result[:800]}"
+        data_summary = f"Result: {result[:350]}"
     else:
-        data_summary = f"Result: {str(result)[:800]}"
+        data_summary = f"Result: {str(result)[:350]}"
 
     if insight:
         data_summary += f"\nPreliminary insight: {insight}"
@@ -107,17 +109,15 @@ Name: {result.name}
 
 def generate_conversational_response(query, result, insight="", df=None):
     """
-    Generate a professional, rigorous AI response using Google Gemini
-    (primary) with Groq LLaMA as fallback.
+    Generate a professional, rigorous AI response using Groq.
     """
-
     # 🔹 Build data summary (with optional dataset context)
     data_summary = _build_data_context(result, insight)
 
     # 🔹 Add dataset preview if available (FIX)
     if df is not None:
         try:
-            df_preview = df.head(10).to_string()
+            df_preview = df.head(3).to_string()
             data_summary += f"\n\nFull Dataset Preview:\n{df_preview}"
         except Exception:
             pass
@@ -128,45 +128,35 @@ Here is the analysis result:
 {data_summary}
 
 Analyze this data using your senior analyst framework. Be specific to THIS data — no generic responses."""
-
-    # 🔹 Try Google Gemini first
-    if GOOGLE_API_KEY:
+    groq_api_key = get_secret("GROQ_API_KEY")
+    if groq_api_key:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=GOOGLE_API_KEY)
-            model = genai.GenerativeModel(
-                "gemini-2.0-flash",
-                system_instruction=ANALYST_SYSTEM_PROMPT
-            )
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.3,
-                    max_output_tokens=350
-                )
-            )
-            if response and response.text:
-                return sanitize_ai_output(response.text)
-        except Exception:
-            pass  # fallback
-
-    # 🔹 Fallback: Groq
-    if GROQ_API_KEY:
-        try:
-            from groq import Groq
-            client = Groq(api_key=GROQ_API_KEY)
+            client = Groq(api_key=groq_api_key)
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
-                temperature=0.3,
-                max_tokens=600
+                temperature=0.15,
+                max_tokens=220,
             )
-            return sanitize_ai_output(response.choices[0].message.content)
-        except Exception:
-            pass
+            if response and response.choices:
+                return sanitize_ai_output(response.choices[0].message.content)
+        except Exception as e:
+            if _is_rate_limit_error(e):
+                return (
+                    "EXECUTIVE INSIGHT\n"
+                    "- AI response paused because Groq rate limit was reached.\n\n"
+                    "KEY FINDINGS\n"
+                    "- This is temporary and not related to your dataset quality.\n\n"
+                    "BUSINESS IMPACT\n"
+                    "- Follow-up analysis is delayed until the limit resets.\n\n"
+                    "LIMITATIONS\n"
+                    "- Groq API returned HTTP 429 Too Many Requests.\n\n"
+                    "RECOMMENDATIONS\n"
+                    "- Wait 30-60 seconds and run the same query again."
+                )
 
     return """EXECUTIVE INSIGHT
     - Unable to generate AI response for this query.
@@ -197,7 +187,6 @@ def generate_greeting(dataset_name="", row_count=0, col_count=0):
 
 def generate_error_response(query, error_text):
     """Generate a helpful response when the analysis fails."""
-
     prompt = f"""The user asked: "{query}"
 But the analysis code failed with error: "{error_text[:300]}"
 
@@ -208,32 +197,20 @@ Write a SHORT, professional message (2-3 sentences) that:
 
 Keep it helpful and direct. Under 60 words."""
 
-    # Try Gemini first
-    if GOOGLE_API_KEY:
+    groq_api_key = get_secret("GROQ_API_KEY")
+    if groq_api_key:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=GOOGLE_API_KEY)
-            model = genai.GenerativeModel("gemini-2.0-flash")
-            response = model.generate_content(prompt)
-            if response and response.text:
-                return response.text.strip()
-        except Exception:
-            pass
-
-    # Fallback: Groq
-    if GROQ_API_KEY:
-        try:
-            from groq import Groq
-            client = Groq(api_key=GROQ_API_KEY)
+            client = Groq(api_key=groq_api_key)
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=150
+                temperature=0.15,
+                max_tokens=80,
             )
             return response.choices[0].message.content.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            if _is_rate_limit_error(e):
+                return "I hit a temporary Groq rate limit (HTTP 429). Please wait about a minute and try again."
     return (
         f"I had some trouble analyzing that. Could you try "
         f"rephrasing your question? For example, try asking about "

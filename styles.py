@@ -64,18 +64,18 @@ section[data-testid="stSidebar"],
 
 .glass-card {
     background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03));
-    border: 1px solid var(--border-soft);
+    border: 1px solid rgba(148, 163, 184, 0.11);
     border-radius: 18px;
     padding: 20px;
-    box-shadow: 0 18px 40px rgba(2, 6, 23, 0.22);
+    box-shadow: 0 12px 28px rgba(2, 6, 23, 0.2);
     transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     animation: fadeSlideIn 0.45s ease;
 }
 
 .glass-card:hover {
-    transform: translateY(-2px) scale(1.01);
-    box-shadow: 0 22px 50px rgba(79, 70, 229, 0.18);
-    border-color: rgba(99, 102, 241, 0.28);
+    transform: translateY(-1px);
+    box-shadow: 0 16px 34px rgba(79, 70, 229, 0.14);
+    border-color: rgba(99, 102, 241, 0.22);
 }
 
 [data-testid="stMetric"] {
@@ -264,9 +264,9 @@ div[aria-selected="true"][role="option"] > div {
 }
 
 [data-testid="stExpander"] {
-    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    border: 1px solid rgba(148, 163, 184, 0.12) !important;
     border-radius: 14px !important;
-    background: rgba(8, 28, 45, 0.72) !important;
+    background: rgba(8, 28, 45, 0.5) !important;
     overflow: hidden;
 }
 
@@ -275,9 +275,9 @@ div[aria-selected="true"][role="option"] > div {
 }
 
 [data-testid="stExpander"] summary {
-    background: linear-gradient(180deg, rgba(49, 46, 129, 0.9), rgba(30, 41, 59, 0.88)) !important;
+    background: rgba(12, 28, 44, 0.78) !important;
     color: #e8f4ff !important;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.14) !important;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1) !important;
     font-weight: 700 !important;
 }
 
@@ -286,7 +286,7 @@ div[aria-selected="true"][role="option"] > div {
 }
 
 [data-testid="stExpander"] details > div:last-child {
-    background: rgba(7, 24, 39, 0.9) !important;
+    background: rgba(7, 24, 39, 0.72) !important;
     color: #e8f4ff !important;
 }
 
@@ -294,15 +294,31 @@ div[aria-selected="true"][role="option"] > div {
     color: #e8f4ff !important;
 }
 
+/* Remove any accidental divider bars inside expander content. */
+[data-testid="stExpander"] hr {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+}
+
 [data-testid="stChatInput"] {
-    border: 1px solid rgba(129, 140, 248, 0.24) !important;
+    border: 1px solid rgba(129, 140, 248, 0.16) !important;
     border-radius: 18px !important;
     background:
-        radial-gradient(circle at 8% 0%, rgba(99, 102, 241, 0.12), transparent 38%),
+        radial-gradient(circle at 8% 0%, rgba(99, 102, 241, 0.07), transparent 38%),
         linear-gradient(180deg, #0f172a 0%, #020617 100%) !important;
-    box-shadow: 0 12px 28px rgba(2, 6, 23, 0.35), inset 0 0 0 1px rgba(255,255,255,0.03) !important;
+    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.24), inset 0 0 0 1px rgba(255,255,255,0.02) !important;
     transition: border-color 220ms ease, box-shadow 220ms ease, transform 220ms ease !important;
     animation: chatInputReveal 260ms ease;
+}
+
+/* Blend the entire chat-input footer area with the dark app canvas. */
+[data-testid="stChatInputContainer"],
+.stChatFloatingInputContainer,
+.stChatInputContainer {
+    background: linear-gradient(180deg, rgba(3, 17, 29, 0.02), rgba(3, 17, 29, 0.8)) !important;
+    border-top: 1px solid rgba(148, 163, 184, 0.08) !important;
 }
 
 [data-testid="stChatInput"] > div,
@@ -670,11 +686,11 @@ div[aria-selected="true"][role="option"] > div {
 }
 
 .chat-shell {
-    border: 1px solid rgba(148, 163, 184, 0.14);
+    border: 1px solid rgba(148, 163, 184, 0.1);
     border-radius: 22px;
     padding: 20px;
     background:
-        radial-gradient(circle at top left, rgba(20, 184, 166, 0.2), transparent 34%),
+        radial-gradient(circle at top left, rgba(20, 184, 166, 0.12), transparent 34%),
         linear-gradient(180deg, rgba(7, 23, 40, 0.96), rgba(9, 30, 48, 0.88));
 }
 
@@ -683,21 +699,75 @@ div[aria-selected="true"][role="option"] > div {
     margin-bottom: 10px;
     padding: 10px;
     border-radius: 14px;
-    border: 1px solid rgba(99, 102, 241, 0.3);
+    border: 1px solid rgba(148, 163, 184, 0.12);
     background:
-        radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.14), transparent 34%),
-        linear-gradient(180deg, rgba(9, 24, 45, 0.9), rgba(7, 18, 33, 0.92));
-    box-shadow: 0 10px 22px rgba(2, 6, 23, 0.35);
+        radial-gradient(circle at 0% 0%, rgba(148, 163, 184, 0.06), transparent 34%),
+        linear-gradient(180deg, rgba(9, 24, 45, 0.82), rgba(7, 18, 33, 0.88));
+    box-shadow: 0 6px 12px rgba(2, 6, 23, 0.2);
+}
+
+/* Soft separator for structured response sections. */
+.soft-divider {
+    height: 1px;
+    margin: 14px 0 10px;
+    background: linear-gradient(90deg, rgba(148, 163, 184, 0.03), rgba(148, 163, 184, 0.28), rgba(148, 163, 184, 0.03));
+    border-radius: 999px;
+}
+
+/* Main navigation polish (radio-based tabs) for stable spacing and lower clutter. */
+.main-nav-wrap {
+    margin: 8px 0 14px;
+    padding: 6px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.main-nav-wrap [data-testid="stRadio"] > div {
+    gap: 8px;
+}
+
+.main-nav-wrap [data-testid="stRadio"] label {
+    padding: 8px 12px !important;
+    border-radius: 10px !important;
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    background: rgba(255, 255, 255, 0.015) !important;
+    min-height: 38px;
+}
+
+.main-nav-wrap [data-testid="stRadio"] label:hover {
+    border-color: rgba(99, 102, 241, 0.36) !important;
+    background: rgba(99, 102, 241, 0.08) !important;
+}
+
+.main-nav-wrap [data-testid="stRadio"] input:checked + div {
+    color: #ffffff !important;
+    font-weight: 700 !important;
 }
 
 .ai-theme-box .stButton > button {
-    background: rgba(20, 35, 58, 0.82) !important;
-    border: 1px solid rgba(99, 102, 241, 0.28) !important;
+    background: rgba(20, 35, 58, 0.62) !important;
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
 }
 
 .ai-theme-box .stButton > button:hover {
-    background: rgba(30, 47, 76, 0.9) !important;
-    border-color: rgba(129, 140, 248, 0.52) !important;
+    background: rgba(30, 47, 76, 0.78) !important;
+    border-color: rgba(148, 163, 184, 0.34) !important;
+}
+
+/* Make Try Asking suggestions feel like clear action chips, not input boxes. */
+.try-asking-section .stButton > button {
+    border-radius: 999px !important;
+    min-height: 34px !important;
+    padding: 0 12px !important;
+    font-size: 12px !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(148, 163, 184, 0.22) !important;
+}
+
+.try-asking-section .stButton > button:hover {
+    background: rgba(255, 255, 255, 0.09) !important;
+    border-color: rgba(148, 163, 184, 0.36) !important;
 }
 
 .chat-hero {

@@ -6,6 +6,9 @@ from io import BytesIO
 from dotenv import load_dotenv
 from modules.app_secrets import get_secret
 
+# Load environment variables before importing app modules that may read secrets at import time.
+load_dotenv(override=True)
+
 # New separate files
 from config import APP_ICON, APP_TITLE, APP_VERSION, DATA_DIR, FRIENDLY_DATASET_NAMES
 from styles import inject_styles
@@ -17,23 +20,20 @@ from ui_components import (
 from modules.dataset_analyzer import analyze_dataset
 from modules.data_loader import normalize_columns
 from modules.dataset_activation import activate_dataset
-from modules.app_logging import get_logger
+from utils.logging import get_logger
 from modules.app_state import ensure_analysis_state
+from modules.app_state import restore_persisted_analysis_state
 from modules.app_state import get_recent_activity
-from modules.app_tabs import (
-    render_ai_analyst_tab,
-    render_dashboard_header,
-    render_data_overview_tab,
-    render_forecasting_tab,
-    render_reports_tab,
-)
+from components.chat import render_chat_page
+from components.dashboard import render_data_overview_page, render_dashboard_header
+from components.forecast import render_forecasting_page
+from components.navigation import render_main_navigation
+from components.reports import render_reports_page
 from modules.upload_cache import compute_file_fingerprint, should_reuse_uploaded_dataframe
-# Load environment variables
-load_dotenv()
 api_key = get_secret("GROQ_API_KEY")
 
 if not api_key:
-    st.error("Groq API key not found. Please check your .env file.")
+    st.error("Groq API key not found. Add it to .env for local use or to Streamlit secrets for deployment.")
     st.stop()
 
 st.set_page_config(
@@ -43,6 +43,7 @@ st.set_page_config(
 )
 inject_styles(st)
 logger = get_logger("app")
+st.session_state["app_logger"] = logger
 ensure_analysis_state()
 
 
@@ -54,13 +55,13 @@ data_source = st.sidebar.radio(
 )
 
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_dataset(file_bytes: bytes):
     df = pd.read_csv(BytesIO(file_bytes))
     df = normalize_columns(df)
     return df
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_local_dataset(path):
     df = pd.read_csv(path)
     df = normalize_columns(df)
@@ -104,6 +105,7 @@ def load_csv_with_friendly_error(loader_fn, source_label: str, *args):
 
 selected_key = None
 df_to_load = None
+dataset_fingerprint = None
 
 if data_source == "Upload CSV":
     uploaded_file = st.sidebar.file_uploader("Upload CSV Dataset", type=["csv"])
@@ -133,6 +135,7 @@ if data_source == "Upload CSV":
 
         st.session_state["uploaded_name"] = selected_key
         st.session_state["uploaded_fingerprint"] = uploaded_fingerprint
+        dataset_fingerprint = uploaded_fingerprint
 
     elif "uploaded_df" in st.session_state:
         df_to_load = st.session_state["uploaded_df"]
@@ -155,10 +158,13 @@ elif data_source == "Use Pre-loaded Dataset":
                 if load_error:
                     st.sidebar.error(load_error)
                     st.stop()
+                with open(file_path_to_load, "rb") as dataset_file:
+                    selected_fingerprint = compute_file_fingerprint(dataset_file.read())
                 logger.info(
                     "dataset_preloaded_loaded",
                     extra={"dataset": selected_key, "load_ms": round((time.perf_counter() - load_started) * 1000, 2)},
                 )
+                dataset_fingerprint = selected_fingerprint
         else:
             st.sidebar.warning(f"No CSV files found in {DATA_DIR} folder.")
     else:
@@ -166,7 +172,7 @@ elif data_source == "Use Pre-loaded Dataset":
 
 if selected_key and df_to_load is not None:
     activation_started = time.perf_counter()
-    was_activated = activate_dataset(selected_key, df_to_load)
+    was_activated = activate_dataset(selected_key, df_to_load, dataset_fingerprint=dataset_fingerprint)
     logger.info(
         "dataset_activation_checked",
         extra={
@@ -180,6 +186,7 @@ if selected_key and df_to_load is not None:
             f"<div class='sidebar-success-inline'>✅ {selected_key} loaded successfully</div>",
             unsafe_allow_html=True,
         )
+        restore_persisted_analysis_state()
 
 if "df" not in st.session_state or st.session_state["df"] is None:
     render_empty_state_hero()
@@ -194,33 +201,21 @@ render_sidebar_dataset_badge(st.session_state["dataset_name"], df.shape[0], df.s
 render_dashboard_header(df)
 render_recent_activity_panel()
 
-tab_labels = [
-    "📊 Data Overview",
-    "🤖 AI Analyst",
-    "🔮 Forecasting",
-    "📑 Reports",
-]
-default_main_tab = "🤖 AI Analyst" if "auto_query" in st.session_state else st.session_state.get("main_tab", tab_labels[0])
-if default_main_tab not in tab_labels:
-    default_main_tab = tab_labels[0]
-
-tab1, tab2, tab3, tab4 = st.tabs(
-    tab_labels,
-    default=default_main_tab,
-    key="main_tab",
-)
 st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-with tab1:
-    render_data_overview_tab(df)
 
-with tab2:
-    render_ai_analyst_tab(df, schema, api_key, logger)
+if st.session_state.get("pending_query") or st.session_state.get("auto_query"):
+    st.session_state["active_page"] = "chat"
 
-with tab3:
-    render_forecasting_tab(df)
+active_page = render_main_navigation(logger)
 
-with tab4:
-    render_reports_tab()
+if active_page == "overview":
+    render_data_overview_page(df)
+elif active_page == "chat":
+    render_chat_page(df, schema, api_key, logger)
+elif active_page == "forecast":
+    render_forecasting_page(df)
+elif active_page == "reports":
+    render_reports_page()
 
 st.markdown(f"""
 <div style="

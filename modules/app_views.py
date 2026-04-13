@@ -1,5 +1,6 @@
 import re
 import html
+import time
 
 import pandas as pd
 import plotly.express as px
@@ -16,6 +17,15 @@ from ui_components import (
     render_table_panel,
     render_user_bubble,
 )
+
+
+def _queue_query(query_text: str):
+    cleaned = str(query_text or "").strip()
+    if not cleaned:
+        return
+    st.session_state["pending_query"] = cleaned
+    st.session_state["pending_query_id"] = str(time.time_ns())
+    st.session_state["active_page"] = "chat"
 
 
 def init_analysis_state():
@@ -90,9 +100,8 @@ def render_quick_prompt_buttons(df: pd.DataFrame, schema: dict | None = None, da
     quick_prompts = _generate_quick_prompts(df, schema, dataset_name)
     for idx, prompt in enumerate(quick_prompts):
         with prompt_cols[idx]:
-            if st.button(prompt, key=f"starter_prompt_{idx}", use_container_width=True):
-                st.session_state.auto_query = prompt
-                st.rerun()
+            if st.button(prompt, key=f"starter_prompt_{idx}", width="stretch"):
+                _queue_query(prompt)
 
 
 def render_chart_collection(charts):
@@ -148,9 +157,8 @@ def render_follow_up_buttons(raw_suggestions: str, key_prefix: str):
     parsed_questions = extract_follow_up_questions(raw_suggestions)
     for q in parsed_questions:
         clean_q = clean_text(q).replace("`", "")
-        if st.button(clean_q, key=f"{key_prefix}_{clean_q}", use_container_width=True):
-            st.session_state.auto_query = clean_q
-            st.rerun()
+        if st.button(clean_q, key=f"{key_prefix}_{clean_q}", width="stretch"):
+            _queue_query(clean_q)
     if not parsed_questions:
         st.caption("No follow-up questions available.")
 
@@ -159,9 +167,12 @@ def render_follow_up_section(raw_suggestions: str, key_prefix: str):
     if not raw_suggestions:
         return
 
-    st.markdown('<div class="ai-theme-box">', unsafe_allow_html=True)
-    with st.expander("Suggested Follow-Up Questions", expanded=False):
-        render_follow_up_buttons(raw_suggestions, key_prefix)
+    st.markdown(
+        '<div style="margin-top:10px; margin-bottom:8px; padding:12px 14px; border:1px solid rgba(255,255,255,0.08); border-radius:14px; background:rgba(255,255,255,0.02);">',
+        unsafe_allow_html=True,
+    )
+    st.markdown("**Suggested Follow-Up Questions**")
+    render_follow_up_buttons(raw_suggestions, key_prefix)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -206,12 +217,18 @@ def render_chat_history_entry(entry: dict):
             for line in summary_list:
                 st.write("-", line)
 
+    confidence = entry.get("confidence")
+    source_columns = entry.get("source_columns", []) or []
+    if confidence is not None or source_columns:
+        confidence_pct = max(0.0, min(1.0, float(confidence or 0.0))) * 100
+        provenance_text = ", ".join(source_columns[:5]) if source_columns else "Auto-selected from the active dataset"
+        st.caption(f"Confidence: {confidence_pct:.0f}% | Source columns: {provenance_text}")
+
     if entry.get("suggestions"):
         render_follow_up_section(entry["suggestions"], f"suggest_{id(entry)}")
 
     if entry.get("rephrases"):
         st.markdown("**Suggested Rephrases**")
         for idx, suggestion in enumerate(entry["rephrases"]):
-            if st.button(suggestion, key=f"history_rephrase_{id(entry)}_{idx}", use_container_width=True):
-                st.session_state.auto_query = suggestion
-                st.rerun()
+            if st.button(suggestion, key=f"history_rephrase_{id(entry)}_{idx}", width="stretch"):
+                _queue_query(suggestion)
