@@ -63,3 +63,30 @@ def detect_columns(df):
             column_map["Date"] = col
 
     return column_map
+
+
+def load_dataset(raw_input):
+    """Load a dataset from bytes, file-like, or path and return a pandas DataFrame.
+
+    Accepts:
+    - bytes: contents of a CSV file
+    - str: filesystem path to a CSV
+    - file-like object
+    """
+    import io
+
+    # If bytes provided, wrap in BytesIO
+    if isinstance(raw_input, (bytes, bytearray)):
+        bio = io.BytesIO(raw_input)
+        df = pd.read_csv(bio)
+    elif hasattr(raw_input, "read"):
+        # file-like
+        df = pd.read_csv(raw_input)
+    elif isinstance(raw_input, str):
+        df = pd.read_csv(raw_input)
+    else:
+        raise ValueError("Unsupported input type for load_dataset")
+
+    # normalize and return
+    df = normalize_columns(df)
+    return df

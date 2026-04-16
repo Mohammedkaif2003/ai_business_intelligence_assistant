@@ -121,7 +121,7 @@ def render_kpi_cards(kpis):
             trend_label = kpi.get("trend_label", "from prior baseline")
             st.markdown(
                 f"""
-                <div class="kpi-card glass-card">
+                <div class="kpi-card glass-card{' kpi-card--featured' if i == 0 else ''}">
                   <div class="kpi-card__topline">
                     <div class="kpi-card__label">{html.escape(str(metric))}</div>
                     <div class="kpi-card__chip {trend_class}">
@@ -141,9 +141,17 @@ def render_kpi_cards(kpis):
 
 
 def render_section_header(title, subtitle=""):
-    st.markdown(f"### {title}")
-    if subtitle:
-        st.caption(subtitle)
+    safe_title = html.escape(clean_text(title))
+    safe_subtitle = html.escape(clean_text(subtitle))
+    st.markdown(
+        f"""
+        <div class="section-heading">
+            <div class="section-heading__title">{safe_title}</div>
+            {'<div class="section-heading__subtitle">' + safe_subtitle + '</div>' if safe_subtitle else ''}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _normalize_chart_payload(chart):
@@ -316,17 +324,32 @@ def render_sidebar_question_inspiration(questions):
 
 
 def render_insight_card(text):
-    st.info(clean_text(text))
+    safe_text = html.escape(clean_text(text))
+    st.markdown(
+        f"""
+        <div class="insight-banner">
+            <div class="insight-banner__eyebrow">Business Insight</div>
+            <div class="insight-banner__body">{safe_text}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_result_status(title, body, kind="info"):
-    message = f"**{clean_text(title)}**\n\n{clean_text(body)}"
-    if kind == "warning":
-        st.warning(message)
-    elif kind == "success":
-        st.success(message)
-    else:
-        st.info(message)
+    tone_class = {
+        "warning": "status-card--warning",
+        "success": "status-card--success",
+    }.get(kind, "status-card--info")
+    st.markdown(
+        f"""
+        <div class="status-card {tone_class}">
+            <div class="status-card__title">{html.escape(clean_text(title))}</div>
+            <div class="status-card__body">{html.escape(clean_text(body))}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_structured_response(data: dict):
@@ -354,23 +377,39 @@ def render_structured_response(data: dict):
 
         label = section_labels.get(section, section.title())
         tone = section_tones.get(section, "rgba(148, 163, 184, 0.14)")
-        st.markdown(
-            f"""
-            <div style="
-                border:1px solid rgba(148,163,184,0.20);
-                border-radius:14px;
-                padding:12px 14px;
-                margin:10px 0;
-                background:{tone};
-            ">
-                <div style="font-size:13px; text-transform:uppercase; letter-spacing:0.08em; color:#c7d6ee; margin-bottom:8px; font-weight:700;">{label}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        # Wrap each section in a structured-section block so CSS can style it
+        # Make Limitations collapsible using <details> without hiding content.
+        safe_label = html.escape(label)
+        safe_tone = html.escape(tone)
+        header_html = f"<div class='structured-section__header'><span class='structured-section__icon'>💡</span><div class='structured-section__title'>{safe_label}</div></div>"
 
-        for point in points:
-            st.markdown(f"- {clean_text(point)}")
+        if section == "LIMITATIONS":
+            st.markdown(
+                f"""
+                <div class="structured-section" style="background:{safe_tone};">
+                    <details open style="padding:10px; border-radius:10px;">
+                        <summary style="font-weight:700; color:#c7d6ee; margin-bottom:8px;">{safe_label}</summary>
+                        <div class="structured-section__body">
+                """,
+                unsafe_allow_html=True,
+            )
+            for point in points:
+                st.markdown(f"- {clean_text(point)}")
+            st.markdown("</div></details></div>", unsafe_allow_html=True)
+        else:
+            # Emphasize Executive Insight visually
+            section_class = "structured-section structured-section--emphasize" if section == "EXECUTIVE INSIGHT" else "structured-section"
+            st.markdown(
+                f"""
+                <div class="{section_class}" style="background:{safe_tone};">
+                    {header_html}
+                    <div class="structured-section__body" style="padding-top:6px;">
+                """,
+                unsafe_allow_html=True,
+            )
+            for point in points:
+                st.markdown(f"- {clean_text(point)}")
+            st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: int | None = None):
@@ -384,7 +423,8 @@ def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: 
 
     safe_key = re.sub(r"[^a-zA-Z0-9_]+", "_", key)
     st.markdown('<div class="glass-card table-panel">', unsafe_allow_html=True)
-    st.markdown(f"### {html.escape(title)}")
+    st.markdown(f'<div class="section-title">{html.escape(title)}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-subtitle">Search, filter, and sort this view without leaving the current analysis context.</div>', unsafe_allow_html=True)
 
     col_search, col_filter, col_sort = st.columns([1.5, 1, 1])
     with col_search:
@@ -423,7 +463,8 @@ def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: 
         ascending = st.toggle("Ascending", value=False, key=f"{safe_key}_ascending")
         try:
             working_df = working_df.sort_values(by=sort_column, ascending=ascending, kind="stable")
-        except Exception:
+        except (KeyError, ValueError) as e:
+            st.caption(f"Sort failed: {e}")
             pass
 
     if max_rows is not None and len(working_df) > max_rows:
@@ -432,7 +473,28 @@ def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: 
     else:
         st.caption(f"{len(working_df):,} rows shown")
 
-    display_df = working_df.fillna("—").copy()
+    page_size = st.selectbox(
+        "Rows per page",
+        options=[25, 50, 100, 200],
+        index=1,
+        key=f"{safe_key}_page_size",
+    )
+    total_rows = len(working_df)
+    total_pages = max(1, (total_rows + page_size - 1) // page_size)
+    page_number = st.number_input(
+        "Page",
+        min_value=1,
+        max_value=total_pages,
+        value=1,
+        step=1,
+        key=f"{safe_key}_page_number",
+    )
+    start_idx = (int(page_number) - 1) * int(page_size)
+    end_idx = min(start_idx + int(page_size), total_rows)
+    page_df = working_df.iloc[start_idx:end_idx]
+    st.caption(f"Displaying rows {start_idx + 1:,} to {end_idx:,} of {total_rows:,}.")
+
+    display_df = page_df.fillna("—").copy()
     display_df.columns = [html.escape(str(col)) for col in display_df.columns]
 
     rows_html = []
@@ -553,18 +615,24 @@ def render_settings_panel():
     temperature = float(st.session_state.get("ai_temperature", 0.7))
     max_tokens = int(st.session_state.get("ai_max_tokens", 1024))
     use_cache = bool(st.session_state.get("use_response_cache", True))
+    fast_mode = bool(st.session_state.get("ui_fast_mode", True))
+
+    # Performance panel removed from sidebar per request.
+    # fast_mode remains read from session state default above.
     
     # Store settings in session state
     st.session_state["ai_model"] = model_choice
     st.session_state["ai_temperature"] = temperature
     st.session_state["ai_max_tokens"] = max_tokens
     st.session_state["use_response_cache"] = use_cache
+    st.session_state["ui_fast_mode"] = fast_mode
     
     return {
         "model": model_choice,
         "temperature": temperature,
         "max_tokens": max_tokens,
         "use_cache": use_cache,
+        "fast_mode": fast_mode,
     }
 
 

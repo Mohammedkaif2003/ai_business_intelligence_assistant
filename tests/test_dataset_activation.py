@@ -58,3 +58,13 @@ def test_activate_dataset_returns_false_when_dataframe_none(monkeypatch):
     activated = dataset_activation.activate_dataset("sales.csv", None)
 
     assert activated is False
+
+
+def test_activate_dataset_returns_false_when_dataframe_empty(monkeypatch):
+    dummy = _DummyStreamlit()
+    monkeypatch.setattr(dataset_activation, "st", dummy)
+
+    empty_df = pd.DataFrame(columns=["Revenue"])
+    activated = dataset_activation.activate_dataset("sales.csv", empty_df)
+
+    assert activated is False

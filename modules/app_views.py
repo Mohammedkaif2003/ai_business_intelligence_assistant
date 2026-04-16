@@ -167,6 +167,28 @@ def render_follow_up_section(raw_suggestions: str, key_prefix: str):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+def _normalize_summary_lines(summary_value) -> list[str]:
+    if summary_value is None:
+        return []
+
+    if isinstance(summary_value, str):
+        lines = [line.strip("-•\t ") for line in summary_value.replace("\r", "").splitlines() if line.strip()]
+        return lines or ([summary_value.strip()] if summary_value.strip() else [])
+
+    if isinstance(summary_value, (list, tuple, set)):
+        values = [str(item or "").strip() for item in summary_value if str(item or "").strip()]
+        if len(values) >= 4 and all(len(item) <= 2 for item in values):
+            joined = "".join(values).strip()
+            if joined:
+                joined = re.sub(r"([A-Za-z])([0-9])", r"\1 \2", joined)
+                joined = re.sub(r"([0-9])([A-Za-z])", r"\1 \2", joined)
+                return [joined]
+        return values
+
+    text = str(summary_value).strip()
+    return [text] if text else []
+
+
 def render_chat_history_entry(entry: dict):
     render_user_bubble(entry["query"])
 
@@ -202,7 +224,7 @@ def render_chat_history_entry(entry: dict):
     if insight:
         render_insight_card(insight)
 
-    summary_list = entry.get("summary", [])
+    summary_list = _normalize_summary_lines(entry.get("summary", []))
     if summary_list:
         with st.expander("Answer Summary", expanded=False):
             for line in summary_list:

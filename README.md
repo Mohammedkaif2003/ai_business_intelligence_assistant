@@ -142,7 +142,13 @@ Create a `.env` file in the project root:
 
 ```env
 GROQ_API_KEY=your_groq_key_here
+REMEMBER_ME_MODE=local
 ```
+
+`REMEMBER_ME_MODE` controls file-based remember-me behavior:
+
+- `local` (default): enables local remembered sign-in
+- `off` (or any non-local/dev value): disables remembered sign-in
 
 ### 4. Run the app
 

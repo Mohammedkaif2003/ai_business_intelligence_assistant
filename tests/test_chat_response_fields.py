@@ -232,3 +232,67 @@ def test_chat_handler_source_columns_cleaned(sample_dataframe, sample_schema):
         source_cols = result["source_columns"]
         # Empty strings and null values should be filtered
         assert all(col for col in source_cols), "source_columns should not contain empty strings"
+
+
+def test_chat_handler_normalizes_string_summary_field(sample_dataframe, sample_schema):
+    """String summary payload should not be rendered as character-by-character bullets."""
+    with patch("modules.chat_handler.call_groq_json") as mock_groq:
+        mock_groq.return_value = {
+            "ok": True,
+            "content": """{
+                "intent": "analysis",
+                "query_rejected": false,
+                "confidence": 1.0,
+                "source_columns": ["Quantity"],
+                "response": "Sorted top 10 by Quantity.",
+                "summary": "Top 10 by Quantity",
+                "follow_ups": [],
+                "rephrases": []
+            }""",
+        }
+
+        result = chat_handler(
+            query="Show top 10 by quantity",
+            df=sample_dataframe,
+            schema=sample_schema,
+            dataset_name="test_dataset",
+            logger=None,
+            last_api_call_ts=time.time(),
+            min_call_interval_seconds=1.0,
+        )
+
+        assert result["summary_list"] == ["Top 10 by Quantity"]
+
+
+def test_chat_handler_normalizes_string_structured_sections(sample_dataframe, sample_schema):
+    """String structured fields should become one bullet item, not per-character bullets."""
+    with patch("modules.chat_handler.call_groq_json") as mock_groq:
+        mock_groq.return_value = {
+            "ok": True,
+            "content": """{
+                "intent": "analysis",
+                "query_rejected": false,
+                "confidence": 0.9,
+                "source_columns": ["revenue"],
+                "response": "Revenue is increasing.",
+                "summary": [],
+                "executive_insight": "Revenue increased over the selected period",
+                "key_findings": "North region contributes the most",
+                "follow_ups": [],
+                "rephrases": []
+            }""",
+        }
+
+        result = chat_handler(
+            query="Summarize revenue trend",
+            df=sample_dataframe,
+            schema=sample_schema,
+            dataset_name="test_dataset",
+            logger=None,
+            last_api_call_ts=time.time(),
+            min_call_interval_seconds=1.0,
+        )
+
+        structured = result.get("structured_response", {})
+        assert structured.get("EXECUTIVE INSIGHT") == ["Revenue increased over the selected period"]
+        assert structured.get("KEY FINDINGS") == ["North region contributes the most"]

@@ -77,6 +77,16 @@ def get_cached_dataset_state(dataset_cache_key: str) -> dict[str, Any]:
         return entry if isinstance(entry, dict) else {}
 
 
+def get_all_cached_dataset_states() -> dict[str, Any]:
+    """Return the entire cache mapping of dataset_cache_key -> state dict.
+
+    This is used to enumerate persisted dataset states (for 'All Datasets' history view).
+    """
+    with _CACHE_LOCK:
+        cache = _load_cache_data()
+        return cache if isinstance(cache, dict) else {}
+
+
 def save_cached_dataset_state(dataset_cache_key: str, state: dict[str, Any]) -> dict[str, Any]:
     dataset_cache_key = str(dataset_cache_key or "").strip()
     if not dataset_cache_key or not isinstance(state, dict):
@@ -129,7 +139,11 @@ def save_cached_response(dataset_cache_key: str, query_hash: str, response: dict
         if not isinstance(response_cache, dict):
             response_cache = {}
         
-        response_cache[query_hash] = response
+        response_to_store = dict(response)
+        if "_original_query" not in response_to_store:
+            response_to_store["_original_query"] = str(response.get("query", "") or "")
+
+        response_cache[query_hash] = response_to_store
         entry["response_cache"] = response_cache
         cache[dataset_cache_key] = entry
         _save_cache_data(cache)

@@ -11,10 +11,40 @@ from modules.query_optimizer import compress_dataset_context
 def _build_dataset_context(df: pd.DataFrame, schema: dict, max_rows: int = 8) -> str:
     numeric_cols = schema.get("numeric_columns", []) or df.select_dtypes(include="number").columns.tolist()
     categorical_cols = schema.get("categorical_columns", []) or df.select_dtypes(exclude="number").columns.tolist()
+    datetime_cols = schema.get("datetime_columns", []) or []
 
     sample_df = df.head(max_rows).copy()
     for col in sample_df.columns:
         sample_df[col] = sample_df[col].astype(str)
+
+    numeric_profile_lines: list[str] = []
+    for col in numeric_cols[:6]:
+        try:
+            series = pd.to_numeric(df[col], errors="coerce").dropna()
+            if series.empty:
+                continue
+            numeric_profile_lines.append(
+                f"{col}: min={series.min():,.3f}, max={series.max():,.3f}, mean={series.mean():,.3f}, median={series.median():,.3f}"
+            )
+        except Exception:
+            continue
+
+    categorical_profile_lines: list[str] = []
+    for col in categorical_cols[:4]:
+        try:
+            top_values = (
+                df[col]
+                .astype(str)
+                .fillna("")
+                .value_counts(dropna=False)
+                .head(5)
+            )
+            if top_values.empty:
+                continue
+            parts = [f"{idx} ({count})" for idx, count in top_values.items()]
+            categorical_profile_lines.append(f"{col}: {', '.join(parts)}")
+        except Exception:
+            continue
 
     return (
         f"Rows: {len(df)}\n"
@@ -22,6 +52,9 @@ def _build_dataset_context(df: pd.DataFrame, schema: dict, max_rows: int = 8) ->
         f"Column Names: {list(df.columns)}\n"
         f"Numeric Columns: {numeric_cols}\n"
         f"Categorical Columns: {categorical_cols}\n"
+        f"Datetime Columns: {datetime_cols}\n"
+        f"Numeric Profile:\n" + ("\n".join(numeric_profile_lines) if numeric_profile_lines else "None") + "\n"
+        f"Categorical Top Values:\n" + ("\n".join(categorical_profile_lines) if categorical_profile_lines else "None") + "\n"
         f"Sample Rows:\n{sample_df.to_string(index=False)}"
     )
 
@@ -160,9 +193,33 @@ def _fallback_summary_from_response(response_text: str, max_items: int = 3) -> l
     return summary_items
 
 
-def _clean_summary_items(summary_items: list[str], response_text: str) -> list[str]:
+def _normalize_text_items(items: Any) -> list[str]:
+    if items is None:
+        return []
+
+    if isinstance(items, str):
+        text = items.strip()
+        if not text:
+            return []
+        lines = [segment.strip("-•\t ") for segment in text.replace("\r", "").splitlines() if segment.strip()]
+        return lines or [text]
+
+    if isinstance(items, (list, tuple, set)):
+        normalized: list[str] = []
+        for value in items:
+            value_text = str(value or "").strip()
+            if value_text:
+                normalized.append(value_text)
+        return normalized
+
+    text = str(items).strip()
+    return [text] if text else []
+
+
+def _clean_summary_items(summary_items: Any, response_text: str) -> list[str]:
+    normalized_items = _normalize_text_items(summary_items)
     clean_items = []
-    for item in summary_items or []:
+    for item in normalized_items:
         text = str(item).strip()
         if not text or _is_question_like(text):
             continue
@@ -174,9 +231,10 @@ def _clean_summary_items(summary_items: list[str], response_text: str) -> list[s
     return _fallback_summary_from_response(response_text)
 
 
-def _clean_section_items(items: list[str]) -> list[str]:
+def _clean_section_items(items: Any) -> list[str]:
+    normalized_items = _normalize_text_items(items)
     clean_items: list[str] = []
-    for item in items or []:
+    for item in normalized_items:
         text = str(item).strip()
         if not text or _is_question_like(text):
             continue
@@ -186,11 +244,11 @@ def _clean_section_items(items: list[str]) -> list[str]:
 
 def _build_structured_response(payload: dict[str, Any]) -> dict[str, list[str]]:
     structured = {
-        "EXECUTIVE INSIGHT": _clean_section_items(payload.get("executive_insight", []) or []),
-        "KEY FINDINGS": _clean_section_items(payload.get("key_findings", []) or []),
-        "BUSINESS IMPACT": _clean_section_items(payload.get("business_impact", []) or []),
-        "RECOMMENDED NEXT STEPS": _clean_section_items(payload.get("recommended_next_steps", []) or []),
-        "LIMITATIONS": _clean_section_items(payload.get("limitations", []) or []),
+        "EXECUTIVE INSIGHT": _clean_section_items(payload.get("executive_insight", [])),
+        "KEY FINDINGS": _clean_section_items(payload.get("key_findings", [])),
+        "BUSINESS IMPACT": _clean_section_items(payload.get("business_impact", [])),
+        "RECOMMENDED NEXT STEPS": _clean_section_items(payload.get("recommended_next_steps", [])),
+        "LIMITATIONS": _clean_section_items(payload.get("limitations", [])),
     }
 
     return {key: value for key, value in structured.items() if value}
@@ -382,8 +440,9 @@ def chat_handler(
         time.sleep(wait_seconds)
 
     dataset_context = _build_dataset_context(df, schema)
-    # Compress context to reduce token usage (saves ~10-15% tokens per query)
-    dataset_context = compress_dataset_context(dataset_context, max_length=400)
+    # Keep context compact and scale down for large datasets.
+    context_max_length = 1200 if len(df) <= 1000 else 900 if len(df) <= 10000 else 700
+    dataset_context = compress_dataset_context(dataset_context, max_length=context_max_length)
     dataset_label = str(dataset_name or "Active Dataset")
 
     prompt = f"""Answer the user and classify intent in one JSON response.
@@ -398,10 +457,10 @@ key_findings, business_impact, recommended_next_steps, limitations, response, su
 follow_ups, rephrases
 
 Rules:
-- Be concise and data-grounded.
+- Be concise, data-grounded, and specific.
 - Use actual column names only.
 - If unrelated, set query_rejected=true.
-- Make follow_ups real next-step questions.
+- Keep response under 120 words unless user asks for detail.
 - Include all keys even if empty.
 """.strip()
 

@@ -18,6 +18,7 @@ def forecast_revenue(df, periods=3):
         "message": "Forecasting requires a date-like column (e.g. Date, Order Date) and a numeric metric (e.g. Revenue or Sales).",
         "forecast_df": None,
         "trend": None,
+        "diagnostics": [],
     }
     logger.info("Starting forecast generation for %s rows and %s periods", len(df), periods)
 
@@ -53,6 +54,10 @@ def forecast_revenue(df, periods=3):
             "No suitable date column was found. "
             "Add a column named Date / Order Date / Transaction Date, or a Year + Month combination."
         )
+        result["diagnostics"] = [
+            f"Available columns: {', '.join(map(str, working_df.columns[:8]))}" if len(working_df.columns) else "No columns were detected.",
+            "Expected a date-like field or a Year + Month pair.",
+        ]
         logger.warning("Forecasting aborted: no suitable date column")
         return result
 
@@ -73,6 +78,10 @@ def forecast_revenue(df, periods=3):
                 "No numeric metric column found for forecasting. "
                 "Include a column such as Revenue, Sales, Amount, or another numeric field."
             )
+            result["diagnostics"] = [
+                "No numeric columns were detected in the selected dataset.",
+                f"Available columns: {', '.join(map(str, working_df.columns[:8]))}" if len(working_df.columns) else "No columns were detected.",
+            ]
             logger.warning("Forecasting aborted: no numeric metric column")
             return result
 
@@ -88,6 +97,11 @@ def forecast_revenue(df, periods=3):
 
         if len(monthly) < 3:
             result["message"] = "Not enough monthly data points for forecasting (need at least 3)."
+            result["diagnostics"] = [
+                f"Detected date column: {date_col}",
+                f"Detected metric column: {metric_col}",
+                f"Usable monthly points after aggregation: {len(monthly)}",
+            ]
             logger.warning("Forecasting aborted: only %s monthly points available", len(monthly))
             return result
 
@@ -145,6 +159,10 @@ def forecast_revenue(df, periods=3):
 
     except Exception as e:
         result["message"] = f"Forecasting error: {str(e)}"
+        result["diagnostics"] = [
+            f"Detected date column: {date_col or 'None'}",
+            f"Detected metric column: {metric_col or 'None'}",
+        ]
         logger.exception("Forecasting failed")
 
     return result

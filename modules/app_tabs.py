@@ -30,6 +30,7 @@ from modules.prompt_cache import (
 from modules.cache_metrics import record_cache_hit, record_cache_miss, get_cache_stats
 from modules.request_queue import queue_request, try_process_queue, get_queue_stats, is_api_unavailable
 from modules.query_optimizer import find_similar_cached_response, _similarity_score
+from modules.app_perf import record_timing
 from modules.app_views import (
     init_analysis_state,
     render_chart_collection,
@@ -67,6 +68,67 @@ from ui_components import (
     render_table_panel,
     render_user_bubble,
 )
+
+
+# Similar-query reuse can return wrong answers for near-but-different queries
+# (for example, "budget" vs "actual"). Keep exact-query cache as default.
+ENABLE_SIMILAR_QUERY_REUSE = False
+
+
+@st.cache_data(show_spinner=False)
+def _compute_overview_cards(df: pd.DataFrame) -> dict[str, str]:
+    return generate_quick_insights(df)
+
+
+@st.cache_data(show_spinner=False)
+def _compute_overview_hero_chart(df: pd.DataFrame):
+    return build_overview_hero_chart(df)
+
+
+@st.cache_data(show_spinner=False)
+def _compute_column_details(df: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Column": df.columns,
+            "Type": df.dtypes.astype(str).values,
+            "Non-Null Count": df.count().values,
+            "Null Count": df.isnull().sum().values,
+            "Unique Values": df.nunique().values,
+            "Example Value": [str(df[col].dropna().iloc[0]) if len(df[col].dropna()) > 0 else "N/A" for col in df.columns],
+        }
+    )
+
+
+@st.cache_data(show_spinner=False)
+def _compute_statistics(df: pd.DataFrame) -> pd.DataFrame:
+    return df.describe(include="all").reset_index()
+
+
+@st.cache_data(show_spinner=False)
+def _compute_auto_insights(df: pd.DataFrame) -> list[str]:
+    return generate_auto_insights(df)
+
+
+def _normalize_summary_lines(summary_value) -> list[str]:
+    if summary_value is None:
+        return []
+
+    if isinstance(summary_value, str):
+        lines = [line.strip("-•\t ") for line in summary_value.replace("\r", "").splitlines() if line.strip()]
+        return lines or ([summary_value.strip()] if summary_value.strip() else [])
+
+    if isinstance(summary_value, (list, tuple, set)):
+        values = [str(item or "").strip() for item in summary_value if str(item or "").strip()]
+        if len(values) >= 4 and all(len(item) <= 2 for item in values):
+            joined = "".join(values).strip()
+            if joined:
+                joined = re.sub(r"([A-Za-z])([0-9])", r"\1 \2", joined)
+                joined = re.sub(r"([0-9])([A-Za-z])", r"\1 \2", joined)
+                return [joined]
+        return values
+
+    text = str(summary_value).strip()
+    return [text] if text else []
 
 
 def _query_cache_key(query: str, dataset_key: str | None) -> str:
@@ -233,25 +295,28 @@ def _render_try_asking_section(df: pd.DataFrame, schema: dict | None = None):
 
     # Keep this section simple to avoid extra visual artifacts.
     st.markdown("#### Try asking")
+    st.markdown("<div class='try-box try-asking-section'>", unsafe_allow_html=True)
     for start in range(0, len(suggestions), 3):
         row_items = suggestions[start:start + 3]
-        chip_cols = st.columns(len(row_items))
+        chip_cols = st.columns(len(row_items), gap="small")
         for offset, suggestion in enumerate(row_items):
             idx = start + offset
             with chip_cols[offset]:
                 if st.button(suggestion, key=f"try_asking_{idx}", width="stretch"):
                     queue_query(suggestion)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_data_overview_tab(df: pd.DataFrame):
-    quick_insights = generate_quick_insights(df)
-    hero_fig = build_overview_hero_chart(df)
+    perf_started = time.perf_counter()
+    quick_insights = _compute_overview_cards(df)
+    hero_fig = _compute_overview_hero_chart(df)
     st.markdown(
         f"""
-        <div class="quick-insights-panel">
-            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#8fb4db;">Quick Insights Panel</div>
-            <div style="font-size:24px; font-weight:800; color:#f8fbff; margin-top:6px;">AI signal summary for this dataset</div>
-            <div style="color:#a8bad8; margin-top:6px;">The dashboard surfaces a standout driver, a weak point, and the strongest anomaly before you ask a question.</div>
+        <div class="quick-insights-panel section-hero">
+            <div class="section-hero__eyebrow">Quick Insights Panel</div>
+            <div class="section-hero__title">AI signal summary for this dataset</div>
+            <div class="section-hero__subtitle">The dashboard surfaces a standout driver, a weak point, and the strongest anomaly before you ask a question.</div>
             <div class="quick-insights-grid">
                 <div class="quick-insight-item">
                     <div class="quick-insight-label">Highest Value Driver</div>
@@ -273,35 +338,36 @@ def render_data_overview_tab(df: pd.DataFrame):
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
     if hero_fig is not None:
         st.markdown('<div class="hero-chart-card" style="margin-bottom: 16px;">', unsafe_allow_html=True)
-        st.markdown("### Hero Chart")
+        st.markdown('<div class="section-title">Hero Chart</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-subtitle">A spotlight view of the clearest trend or comparison available in the current dataset.</div>', unsafe_allow_html=True)
         render_chart_card(hero_fig, st)
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
-    render_table_panel("Dataset Preview", df, "dataset_preview", max_rows=200)
+    render_table_panel("Dataset Preview", df, "dataset_preview", max_rows=100)
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
-    col_info = pd.DataFrame(
-        {
-            "Column": df.columns,
-            "Type": df.dtypes.astype(str).values,
-            "Non-Null Count": df.count().values,
-            "Null Count": df.isnull().sum().values,
-            "Unique Values": df.nunique().values,
-            "Example Value": [str(df[col].dropna().iloc[0]) if len(df[col].dropna()) > 0 else "N/A" for col in df.columns],
-        }
-    )
-    render_table_panel("Column Details", col_info, "column_details")
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-    render_table_panel("Statistics", df.describe().reset_index(), "statistics")
-    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    fast_mode = bool(st.session_state.get("ui_fast_mode", True))
 
-    st.markdown('<div class="glass-card" style="margin-bottom: 24px;">', unsafe_allow_html=True)
-    st.subheader("🔎 Automatic Dataset Insights")
-    auto_insights = generate_auto_insights(df)
-    for insight in auto_insights:
-        st.write("•", insight)
-    st.markdown("</div>", unsafe_allow_html=True)
+    with st.expander("Column Details", expanded=not fast_mode):
+        col_info = _compute_column_details(df)
+        render_table_panel("Column Details", col_info, "column_details")
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    with st.expander("Statistics", expanded=False):
+        stats_df = _compute_statistics(df)
+        render_table_panel("Statistics", stats_df, "statistics")
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    with st.expander("Automatic Dataset Insights", expanded=not fast_mode):
+        st.markdown('<div class="glass-card insight-block" style="margin-bottom: 24px;">', unsafe_allow_html=True)
+        st.markdown('<div class="section-subtitle">Fast pattern detection pulled straight from the current data shape and distributions.</div>', unsafe_allow_html=True)
+        auto_insights = _compute_auto_insights(df)
+        for insight in auto_insights:
+            st.write("•", insight)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    record_timing("overview_render_ms", (time.perf_counter() - perf_started) * 1000)
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
 
@@ -325,6 +391,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     <div class="chat-shell">
         <div class="chat-hero">
             <div>
+                <div class="chat-hero__eyebrow">Analyst Workspace</div>
                 <div class="chat-hero__title">AI Analyst Workspace</div>
                 <div class="chat-hero__subtitle">Ask anything about your data, review structured answers, and move from question to insight fast.</div>
             </div>
@@ -378,12 +445,15 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     for entry in visible_history_entries:
         render_chat_history_entry(entry)
 
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
     # Render try-asking suggestions in an expander to save space and API calls
     # (suggestions are lazy-loaded only when user expands the section)
     with st.expander("💡 Try asking...", expanded=False):
         _render_try_asking_section(df, schema)
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:80px'></div>", unsafe_allow_html=True)
     is_processing = bool(st.session_state.get("chat_processing", False))
     submitted_query = st.chat_input(
         "Ask anything about your data...",
@@ -392,20 +462,41 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     )
 
     if "auto_query" in st.session_state:
+        # If an auto_query was scheduled (e.g., from a follow-up click), set the pending
+        # query directly instead of calling `queue_query()` to avoid double-queuing and
+        # race conditions that can cause the previous query to be prematurely persisted.
         submitted_query = st.session_state.get("auto_query")
-        del st.session_state.auto_query
+        try:
+            del st.session_state.auto_query
+        except Exception:
+            pass
+        if submitted_query:
+            st.session_state["selected_chat_history_id"] = ""
+            st.session_state["chat_view_mode"] = "new"
+            st.session_state["pending_query"] = submitted_query
+            st.session_state["pending_query_id"] = str(time.time_ns())
 
     if submitted_query:
+        # This branch handles user-entered chat input (not auto_query follow-ups).
         st.session_state["selected_chat_history_id"] = ""
         st.session_state["chat_view_mode"] = ""
         queue_query(submitted_query)
 
     query = st.session_state.get("pending_query", "")
     query_id = st.session_state.get("pending_query_id", "")
+    queued_query_text = str(st.session_state.get("queued_query_text", "") or "").strip()
+    if not query and queued_query_text:
+        if st.button("Retry queued request", key="retry_queued_request_btn", width="stretch"):
+            st.session_state["pending_query"] = queued_query_text
+            st.session_state["pending_query_id"] = str(time.time_ns())
+            st.rerun()
     if not query:
         return
 
     # Streamlit reruns can execute this function multiple times; process each query id once.
+    # Guard against processing during active chat
+    if st.session_state.get("chat_processing", False):
+        return
     if query_id and st.session_state.get("last_processed_query_id") == query_id:
         return
 
@@ -430,9 +521,9 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
             outcome = disk_cached
             st.session_state[cache_key] = outcome  # Restore to session
     
-    # If still not found, check for SIMILAR queries in cache (deduplication)
-    # e.g., "What is revenue?" matches cached "Show me revenue"
-    if outcome is None and dataset_cache_key:
+    # If still not found, optionally check for similar queries in cache.
+    # Disabled by default to favor correctness over cache hit-rate.
+    if ENABLE_SIMILAR_QUERY_REUSE and outcome is None and dataset_cache_key:
         # Get all cached responses for this dataset to find similar ones
         # This uses a simple approach - in production, could optimize with vector DB
         all_dataset_responses = {}
@@ -448,7 +539,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
             similar_cached_query, similar_response = find_similar_cached_response(
                 query,
                 all_dataset_responses,
-                similarity_threshold=0.80,  # 80% match
+                similarity_threshold=0.95,
             )
             if similar_response and similar_cached_query:
                 outcome = similar_response
@@ -469,6 +560,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     if outcome is not None:
         if dataset_cache_key:
             record_cache_hit(dataset_cache_key, query_hash)
+        record_timing("chat_cache_lookup_ms", 0.0)
     else:
         if dataset_cache_key:
             record_cache_miss(dataset_cache_key, query_hash)
@@ -478,8 +570,21 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     render_user_bubble(query)
     st.session_state["chat_processing"] = True
 
+    query_started = time.perf_counter()
+    should_preserve_pending_query = False
+    status_placeholder = st.empty()
+    status_placeholder.info("Analyzing your request...")
+    preview_cols = schema.get("numeric_columns", []) if isinstance(schema, dict) else []
+    preview_metric = preview_cols[0] if preview_cols else (df.select_dtypes(include="number").columns.tolist()[:1] or [None])[0]
+    if preview_metric:
+        try:
+            preview_total = float(pd.to_numeric(df[preview_metric], errors="coerce").fillna(0).sum())
+            st.caption(f"Quick preview: total {preview_metric} is approximately {preview_total:,.2f}.")
+        except Exception:
+            pass
     try:
         if outcome is None:
+            status_placeholder.info("Reading dataset context...")
             with st.spinner("🔍 AI analyzing your dataset..."):
                 outcome = chat_handler(
                     query=query,
@@ -493,10 +598,13 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
                     result_history_details=st.session_state.get("result_history_details", []),
                 )
             st.session_state[cache_key] = outcome
+            record_timing("chat_handler_ms", (time.perf_counter() - query_started) * 1000)
             
             # Also save to disk cache for persistence across restarts
             if dataset_cache_key:
                 save_cached_response(dataset_cache_key, query_hash, outcome)
+        else:
+            status_placeholder.success("Loaded from cache.")
 
         st.session_state["last_api_call_ts"] = float(outcome.get("last_api_call_ts", time.time()))
 
@@ -505,7 +613,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         chart_data = outcome.get("chart_data")
         chart_figs = outcome.get("chart_figs", [])
         suggestions = outcome.get("suggestions", "")
-        summary_list = outcome.get("summary_list", [])
+        summary_list = _normalize_summary_lines(outcome.get("summary_list", []))
         query_rejected = bool(outcome.get("query_rejected", False))
         insight = outcome.get("insight", "")
         code = outcome.get("code", "# single-call chat pipeline")
@@ -527,6 +635,8 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
 
         # Handle queued requests (rate-limited but will retry automatically)
         if response_status == "queued":
+            should_preserve_pending_query = True
+            st.session_state["queued_query_text"] = query
             st.info(
                 "⏳ **Working on your answer**\n\n"
                 "We are preparing your insight. This can take a few extra seconds during busy times."
@@ -534,6 +644,17 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
             queue_stats = get_queue_stats()
             if queue_stats.get("length", 0) > 0:
                 render_queue_status(queue_stats)
+            retry_cols = st.columns([1, 1])
+            with retry_cols[0]:
+                if st.button("Retry now", key=f"retry_now_{query_id or hash(query)}", width="stretch"):
+                    st.session_state["pending_query"] = query
+                    st.session_state["pending_query_id"] = str(time.time_ns())
+                    st.rerun()
+            with retry_cols[1]:
+                if st.button("Ask a simpler version", key=f"ask_simpler_{query_id or hash(query)}", width="stretch"):
+                    st.session_state["pending_query"] = f"Summarize briefly: {query}"
+                    st.session_state["pending_query_id"] = str(time.time_ns())
+                    st.rerun()
             st.session_state["chat_processing"] = False
             return
 
@@ -559,6 +680,8 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
                     render_structured_response(structured)
                 else:
                     render_assistant_bubble(clean_response)
+            status_placeholder.success("Answer ready.")
+            st.session_state["queued_query_text"] = ""
 
 
 
@@ -638,19 +761,24 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
             source_columns=source_columns,
         )
     finally:
+        record_timing("chat_total_ms", (time.perf_counter() - query_started) * 1000)
         st.session_state["chat_processing"] = False
         st.session_state["last_processed_query_id"] = query_id
-        st.session_state["pending_query"] = ""
-        st.session_state["pending_query_id"] = ""
+        # Preserve newly queued follow-up prompts clicked during this render pass.
+        # If pending_query_id changed, another prompt was queued and must not be cleared.
+        active_pending_id = str(st.session_state.get("pending_query_id", "") or "")
+        if (not should_preserve_pending_query) and (not active_pending_id or active_pending_id == str(query_id or "")):
+            st.session_state["pending_query"] = ""
+            st.session_state["pending_query_id"] = ""
 
 
 def render_forecasting_tab(df: pd.DataFrame):
     st.markdown(
         """
         <div class="forecast-hero">
-            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#8fb4db;">Forecasting Studio</div>
-            <div style="font-size:28px; font-weight:800; color:#f8fbff; margin-top:6px;">Project your next business move</div>
-            <div style="color:#a8bad8; margin-top:6px;">Generate a clean outlook with projected values, confidence bands, and a quick trend summary.</div>
+            <div class="section-hero__eyebrow">Forecasting Studio</div>
+            <div class="section-hero__title">Project your next business move</div>
+            <div class="section-hero__subtitle">Generate a clean outlook with projected values, confidence bands, and a quick trend summary.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -726,9 +854,9 @@ def render_reports_tab():
     st.markdown(
         """
         <div class="report-hero">
-            <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#8fb4db;">Executive Reporting</div>
-            <div style="font-size:28px; font-weight:800; color:#f8fbff; margin-top:6px;">Package the analysis into a polished PDF</div>
-            <div style="color:#a8bad8; margin-top:6px;">Bundle saved AI analyses, visuals, and insights into a report that feels presentation-ready.</div>
+            <div class="section-hero__eyebrow">Executive Reporting</div>
+            <div class="section-hero__title">Package the analysis into a polished PDF</div>
+            <div class="section-hero__subtitle">Bundle saved AI analyses, visuals, and insights into a report that feels presentation-ready.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -843,9 +971,16 @@ def render_dashboard_header(df: pd.DataFrame):
     st.markdown(
         f"""
         <div class="landing-hero">
-            <div class="landing-hero__kicker">Apex Analytics Platform</div>
-            <div class="landing-hero__title">Ask your data anything and turn raw records into executive-ready decisions.</div>
-            <div class="landing-hero__subtitle">{html.escape(dataset_name)} is loaded and ready. Use the AI analyst, visual summaries, and forecasting workflows to move from question to action in minutes.</div>
+            <div class="landing-hero__content">
+                <div class="landing-hero__kicker">Apex Analytics Platform</div>
+                <div class="landing-hero__title">Ask your data anything and turn raw records into executive-ready decisions.</div>
+                <div class="landing-hero__subtitle">{html.escape(dataset_name)} is loaded and ready. Use the AI analyst, visual summaries, and forecasting workflows to move from question to action in minutes.</div>
+                <div class="landing-hero__badges">
+                    <span class="landing-hero__badge">Live dataset context</span>
+                    <span class="landing-hero__badge">Executive-ready views</span>
+                    <span class="landing-hero__badge">Signal-first layout</span>
+                </div>
+            </div>
             <div class="landing-hero__stats">
                 <div class="landing-hero__stat">
                     <div class="landing-hero__stat-label">Rows</div>

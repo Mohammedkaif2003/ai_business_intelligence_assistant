@@ -1,5 +1,8 @@
 import pandas as pd
 
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import modules.app_state as app_state
 
 
@@ -55,3 +58,77 @@ def test_persist_analysis_cycle_writes_expected_state(monkeypatch):
     assert len(dummy.session_state["chat_history"]) == 1
     assert len(dummy.session_state["result_history"]) == 1
     assert len(dummy.session_state["result_history_details"]) == 1
+
+
+def test_get_sidebar_history_entries_deduplicates_cloud_and_local(monkeypatch):
+    dummy = _DummyStreamlit()
+    dummy.session_state = {
+        "chat_history": [
+            {
+                "history_id": "local-123",
+                "cloud_history_id": "cloud-abc",
+                "dataset_key": "sales_data.csv",
+                "created_at": "2026-04-15T10:00:00+00:00",
+                "query": "Show top 10 by Quantity",
+                "ai_response": "Top 10 generated",
+            }
+        ],
+        "supabase_user_id": "user-1",
+        "supabase_access_token": "token-1",
+    }
+    monkeypatch.setattr(app_state, "st", dummy)
+
+    monkeypatch.setattr(
+        app_state,
+        "fetch_cloud_chat_history",
+        lambda user_id, access_token, dataset_key=None, limit=200: [
+            {
+                "id": "cloud-abc",
+                "dataset_key": "sales_data.csv",
+                "created_at": "2026-04-15T10:00:00+00:00",
+                "query": "Show top 10 by Quantity",
+                "ai_response": "Top 10 generated",
+                "insight": "",
+                "summary": [],
+                "source_columns": ["Quantity"],
+            }
+        ],
+    )
+
+    entries = app_state.get_sidebar_history_entries(scope="all", limit=200)
+
+    assert len(entries) == 1
+    assert str(entries[0].get("cloud_history_id", "")) == "cloud-abc"
+
+
+def test_get_sidebar_history_entries_uses_cloud_dataset_label(monkeypatch):
+    dummy = _DummyStreamlit()
+    dummy.session_state = {
+        "chat_history": [],
+        "supabase_user_id": "user-1",
+        "supabase_access_token": "token-1",
+    }
+    monkeypatch.setattr(app_state, "st", dummy)
+
+    monkeypatch.setattr(
+        app_state,
+        "fetch_cloud_chat_history",
+        lambda user_id, access_token, dataset_key=None, limit=200: [
+            {
+                "id": "cloud-1",
+                "dataset_key": "d65eb36392b637c914962e82a568cba28929daebe71f1059f1e5000a617730b3",
+                "created_at": "2026-04-15T10:30:00+00:00",
+                "query": "Show top 10 by Quantity",
+                "ai_response": "Top 10 generated",
+                "insight": "",
+                "summary": [],
+                "source_columns": ["Quantity"],
+                "metadata": {"dataset_label": "sales_data.csv"},
+            }
+        ],
+    )
+
+    entries = app_state.get_sidebar_history_entries(scope="all", limit=200)
+
+    assert len(entries) == 1
+    assert entries[0].get("dataset_label") == "sales_data.csv"

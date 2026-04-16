@@ -1,4 +1,6 @@
+import base64
 import json
+import time
 from typing import Any
 
 import requests
@@ -9,6 +11,21 @@ from modules.app_secrets import get_secret
 def _sanitize_json(value: Any) -> Any:
     try:
         return json.loads(json.dumps(value, default=str))
+    except Exception:
+        return None
+
+
+def _decode_jwt_payload(token: str) -> dict[str, Any] | None:
+    parts = str(token or "").strip().split(".")
+    if len(parts) < 2:
+        return None
+
+    payload_segment = parts[1]
+    padding = "=" * (-len(payload_segment) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode((payload_segment + padding).encode("utf-8"))
+        payload = json.loads(decoded.decode("utf-8"))
+        return payload if isinstance(payload, dict) else None
     except Exception:
         return None
 
@@ -29,6 +46,11 @@ def sign_in_with_password(email: str, password: str) -> tuple[bool, str, dict[st
     if not is_supabase_enabled():
         return False, "Supabase is not configured.", None
 
+    normalized_email = str(email or "").strip()
+    normalized_password = str(password or "")
+    if not normalized_email or not normalized_password:
+        return False, "Enter both email and password.", None
+
     try:
         response = requests.post(
             f"{_supabase_url()}/auth/v1/token?grant_type=password",
@@ -36,7 +58,7 @@ def sign_in_with_password(email: str, password: str) -> tuple[bool, str, dict[st
                 "apikey": _supabase_anon_key(),
                 "Content-Type": "application/json",
             },
-            json={"email": email, "password": password},
+            json={"email": normalized_email, "password": normalized_password},
             timeout=15,
         )
         payload = response.json() if response.content else {}
@@ -46,7 +68,7 @@ def sign_in_with_password(email: str, password: str) -> tuple[bool, str, dict[st
 
         user = payload.get("user") or {}
         user_id = str(user.get("id") or "").strip()
-        user_email = str(user.get("email") or email).strip()
+        user_email = str(user.get("email") or normalized_email).strip()
         access_token = str(payload.get("access_token") or "").strip()
 
         if not user_id:
@@ -65,6 +87,13 @@ def sign_up_with_password(email: str, password: str) -> tuple[bool, str]:
     if not is_supabase_enabled():
         return False, "Supabase is not configured."
 
+    normalized_email = str(email or "").strip()
+    normalized_password = str(password or "")
+    if not normalized_email or not normalized_password:
+        return False, "Enter email and password to create an account."
+    if len(normalized_password) < 6:
+        return False, "Password must be at least 6 characters."
+
     try:
         response = requests.post(
             f"{_supabase_url()}/auth/v1/signup",
@@ -72,12 +101,14 @@ def sign_up_with_password(email: str, password: str) -> tuple[bool, str]:
                 "apikey": _supabase_anon_key(),
                 "Content-Type": "application/json",
             },
-            json={"email": email, "password": password},
+            json={"email": normalized_email, "password": normalized_password},
             timeout=15,
         )
         payload = response.json() if response.content else {}
         if response.status_code >= 400:
             message = str(payload.get("msg") or payload.get("error_description") or payload.get("error") or "Sign up failed")
+            if "anonymous sign-ins are disabled" in message.lower():
+                return False, "Sign up failed: Email/password sign-up is disabled or missing credentials. Enable Email provider in Supabase Auth and enter a valid email/password."
             return False, f"Sign up failed: {message}"
 
         return True, "Account created. If email confirmation is enabled, verify your email first."
@@ -105,6 +136,144 @@ def sign_out(access_token: str | None = None) -> None:
         return
 
 
+def send_password_reset_email(email: str, redirect_to: str | None = None) -> tuple[bool, str]:
+    if not is_supabase_enabled():
+        return False, "Supabase is not configured."
+
+    normalized_email = str(email or "").strip()
+    if not normalized_email:
+        return False, "Enter your email to receive a reset link."
+
+    try:
+        payload: dict[str, str] = {"email": normalized_email}
+        if redirect_to and str(redirect_to).strip():
+            payload["redirect_to"] = str(redirect_to).strip()
+
+        response = requests.post(
+            f"{_supabase_url()}/auth/v1/recover",
+            headers={
+                "apikey": _supabase_anon_key(),
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=15,
+        )
+        body = response.json() if response.content else {}
+        if response.status_code >= 400:
+            message = str(body.get("msg") or body.get("error_description") or body.get("error") or "Password reset failed")
+            return False, f"Password reset failed: {message}"
+
+        return True, "If this email exists, a password reset link has been sent."
+    except Exception as exc:
+        return False, f"Password reset failed: {str(exc)}"
+
+
+def update_password(access_token: str, new_password: str) -> tuple[bool, str]:
+    if not is_supabase_enabled():
+        return False, "Supabase is not configured."
+
+    token = str(access_token or "").strip()
+    password = str(new_password or "")
+    if not token:
+        return False, "Reset session is missing. Open the latest reset link again."
+    if len(password) < 6:
+        return False, "Password must be at least 6 characters."
+
+    try:
+        response = requests.put(
+            f"{_supabase_url()}/auth/v1/user",
+            headers={
+                "apikey": _supabase_anon_key(),
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={"password": password},
+            timeout=15,
+        )
+        body = response.json() if response.content else {}
+        if response.status_code >= 400:
+            message = str(body.get("msg") or body.get("error_description") or body.get("error") or "Password update failed")
+            return False, f"Password update failed: {message}"
+
+        return True, "Password updated successfully. Please sign in with your new password."
+    except Exception as exc:
+        return False, f"Password update failed: {str(exc)}"
+
+
+def verify_recovery_token(token_hash: str) -> tuple[bool, str, str | None]:
+    if not is_supabase_enabled():
+        return False, "Supabase is not configured.", None
+
+    normalized_token_hash = str(token_hash or "").strip()
+    if not normalized_token_hash:
+        return False, "Recovery token is missing.", None
+
+    try:
+        response = requests.post(
+            f"{_supabase_url()}/auth/v1/verify",
+            headers={
+                "apikey": _supabase_anon_key(),
+                "Content-Type": "application/json",
+            },
+            json={"type": "recovery", "token_hash": normalized_token_hash},
+            timeout=15,
+        )
+        body = response.json() if response.content else {}
+        if response.status_code >= 400:
+            message = str(body.get("msg") or body.get("error_description") or body.get("error") or "Recovery verification failed")
+            return False, f"Recovery verification failed: {message}", None
+
+        access_token = str(body.get("access_token") or "").strip()
+        if not access_token:
+            return False, "Recovery verification failed: missing session token.", None
+
+        return True, "Recovery link verified.", access_token
+    except Exception as exc:
+        return False, f"Recovery verification failed: {str(exc)}", None
+
+
+def validate_access_token(access_token: str | None) -> tuple[bool, dict[str, str] | None]:
+    if not is_supabase_enabled():
+        return False, None
+
+    token = str(access_token or "").strip()
+    if not token:
+        return False, None
+
+    payload = _decode_jwt_payload(token)
+    if isinstance(payload, dict):
+        exp = payload.get("exp")
+        if isinstance(exp, (int, float)) and exp < time.time():
+            return False, None
+
+    try:
+        response = requests.get(
+            f"{_supabase_url()}/auth/v1/user",
+            headers={
+                "apikey": _supabase_anon_key(),
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+            },
+            timeout=15,
+        )
+        if response.status_code >= 400:
+            return False, None
+
+        payload = response.json() if response.content else {}
+        user_id = str(payload.get("id") or "").strip()
+        user_email = str(payload.get("email") or "").strip()
+        if not user_id:
+            return False, None
+
+        return True, {
+            "id": user_id,
+            "email": user_email,
+            "access_token": token,
+        }
+    except Exception:
+        return False, None
+
+
 def save_cloud_chat_history(user_id: str, access_token: str | None, dataset_key: str | None, entry: dict[str, Any]) -> tuple[bool, str | None]:
     user_id = str(user_id or "").strip()
     token = str(access_token or "").strip()
@@ -126,6 +295,7 @@ def save_cloud_chat_history(user_id: str, access_token: str | None, dataset_key:
                 "query_rejected": bool(entry.get("query_rejected", False)),
                 "has_charts": bool(entry.get("charts")),
                 "result_type": type(entry.get("result")).__name__,
+                "dataset_label": str(entry.get("dataset_label", "") or "").strip() or None,
             }
         )
         or {},

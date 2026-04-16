@@ -7,7 +7,10 @@ def analyze_dataset(df):
 
     # Basic dataset information
     info["rows"] = df.shape[0]
-    info["columns"] = df.shape[1]
+    # Keep backward-compatible numeric column count under `column_count`
+    info["column_count"] = df.shape[1]
+    # Provide a list of column names under `columns` for callers/tests that expect an iterable
+    info["columns"] = df.columns.tolist()
     info["column_names"] = df.columns.tolist()
 
     # Detect column types safely
