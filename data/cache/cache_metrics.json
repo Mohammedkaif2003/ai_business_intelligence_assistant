@@ -1,8 +1,8 @@
 {
-  "total_cache_hits": 68,
-  "total_cache_misses": 23,
-  "total_api_calls": 23,
-  "last_updated_ts": 1776322181.8765404,
+  "total_cache_hits": 119,
+  "total_cache_misses": 27,
+  "total_api_calls": 27,
+  "last_updated_ts": 1776607095.6322622,
   "dataset_stats": {
     "dataset-1": {
       "hits": 2,
@@ -13,16 +13,16 @@
       "misses": 1
     },
     "d65eb36392b637c914962e82a568cba28929daebe71f1059f1e5000a617730b3": {
-      "hits": 55,
-      "misses": 16
+      "hits": 102,
+      "misses": 17
     },
     "ae7c3ed471ac1515cfc2e4291d884814a9a7b1f5be62d8681c8de3b16a0bea2a": {
       "hits": 0,
       "misses": 2
     },
     "ae22c2249fdad38bae6f2c178f4e5039fa8459ca2370bd53a10553988e113431": {
-      "hits": 1,
-      "misses": 1
+      "hits": 5,
+      "misses": 4
     },
     "f70eddacfbf7f302fbb23e0de94ac53614f9b52452945e5816c7dec343e914df": {
       "hits": 10,

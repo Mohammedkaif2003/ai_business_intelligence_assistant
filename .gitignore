@@ -17,3 +17,48 @@ improvements_and_changes_report.txt
 AI Chatbot with Company Data Analysis Capability.docx
 session_walkthrough.txt
 INITIAL_VS_ENHANCED.md
+
+# Editor and IDE
+.vscode/
+.idea/
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Python packaging/build
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local caches and runtime data
+data/cache/
+*.log
+*.sqlite
+.env.*
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Streamlit local config / secrets
+.streamlit/
+.streamlit/secrets.toml
+
+# Local DB files
+*.db
+*.sqlite3
+
+# General caches
+.cache/
+pip-log.txt
+
+# Local raw cache and test artifacts
+data/raw/cache/
+tests/artifacts/
