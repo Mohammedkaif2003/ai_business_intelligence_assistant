@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 import streamlit as st
+import logging
 
 
 def _read_project_env_value(name: str):
@@ -19,7 +20,8 @@ def _read_project_env_value(name: str):
                 continue
             cleaned = str(value).strip().strip('"').strip("'")
             return cleaned if cleaned else None
-    except Exception:
+    except Exception as exc:
+        logging.getLogger(__name__).debug("read_project_env_failed", exc_info=True)
         return None
 
     return None
@@ -40,8 +42,9 @@ def get_secret(name: str, default=None):
             cleaned = str(secret_value).strip().strip('"').strip("'")
             if cleaned:
                 return cleaned
-    except Exception:
-        pass
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("load_secret_failed", exc_info=True)
 
     # Final fallback for explicit shell environment variables.
     value = os.getenv(name)

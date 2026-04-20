@@ -1,4 +1,5 @@
 import pandas as pd
+import logging
 
 
 def generate_auto_insights(df):
@@ -90,8 +91,8 @@ def generate_auto_insights(df):
                     insights.append(
                         f"{revenue_col} {direction} by {abs(change_pct):.1f}% compared to the previous quarter."
                     )
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).debug("quarter_comparison_failed", exc_info=True)
 
     # ---------- TREND DETECTION ----------
     # Handle both Title-cased and lowercase column names
@@ -110,8 +111,8 @@ def generate_auto_insights(df):
                     insights.append("📈 Overall trend shows an increasing trend.")
                 elif trend < 0:
                     insights.append("📉 Overall trend shows the decreasing trend.")
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.getLogger(__name__).debug("trend_detection_failed", exc_info=True)
 
             break
 

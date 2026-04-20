@@ -471,8 +471,9 @@ def generate_recommendations(dataframe):
                     recommendations.append(
                         f"Revenue concentration risk: <b>{top}</b> accounts for {top_share:.0f}% of total. Consider diversification."
                     )
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("report_generation_attachment_failed", exc_info=True)
 
     if numeric_cols:
         metric = numeric_cols[0]
@@ -485,8 +486,9 @@ def generate_recommendations(dataframe):
                     recommendations.append(
                         f"High variability in <b>{metric}</b> (CV={cv:.0f}%). Investigate root causes and prioritize stabilization."
                     )
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("report_generation_pdf_failed", exc_info=True)
 
     if not recommendations:
         recommendations.append("Continue monitoring key metrics and schedule quarterly performance reviews.")

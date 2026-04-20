@@ -12,3 +12,6 @@ python-dotenv
 reportlab
 kaleido
 pytest
+openai
+google-genai
+requests

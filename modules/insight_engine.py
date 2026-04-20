@@ -95,8 +95,9 @@ def generate_business_insight(data):
 
                 elif trend < 0:
                     insights.append("Overall trend shows a decline.")
-            except Exception:
-                pass
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).debug("insight_generation_failed", exc_info=True)
 
             break
 

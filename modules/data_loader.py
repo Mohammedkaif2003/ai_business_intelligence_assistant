@@ -39,6 +39,38 @@ def normalize_columns(df):
         except (TypeError, ValueError):
             pass
 
+    # Deduplicate column names that may collide after normalization/mapping.
+    # For collisions, append " (1)", " (2)", ... to create unique column names.
+    cols = list(df.columns)
+    counts: dict[str, int] = {}
+    unique_cols: list[str] = []
+    collisions = False
+    for col in cols:
+        base = str(col)
+        if base not in counts:
+            counts[base] = 0
+
+        if counts[base] == 0 and base not in unique_cols:
+            unique_name = base
+            counts[base] = 1
+        else:
+            collisions = True
+            idx = counts[base]
+            unique_name = f"{base} ({idx})"
+            # ensure we don't accidentally collide with an existing unique name
+            while unique_name in unique_cols:
+                idx += 1
+                unique_name = f"{base} ({idx})"
+            counts[base] = idx + 1
+
+        unique_cols.append(unique_name)
+
+    if collisions:
+        import logging
+
+        logging.getLogger(__name__).debug("column_name_collisions_resolved", extra={"original": cols, "resolved": unique_cols})
+        df.columns = unique_cols
+
     return df
 
 

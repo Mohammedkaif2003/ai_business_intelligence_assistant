@@ -2,12 +2,10 @@ import os
 import re
 
 import streamlit as st
-from groq import Groq
 
 from modules.app_secrets import get_secret
 from modules.code_executor import validate_generated_code
-
-api_key = get_secret("GROQ_API_KEY")
+from modules.ai_service_new import get_groq_client
 
 
 def _is_rate_limit_error(error: Exception) -> bool:
@@ -17,7 +15,15 @@ def _is_rate_limit_error(error: Exception) -> bool:
 
 @st.cache_data(show_spinner=False)
 def generate_analysis_code(api_key, query, df, dataset_context):
-    client = Groq(api_key=api_key)
+    # Prefer a cached client if available; fall back to provided api_key.
+    client = get_groq_client() or None
+    if client is None and api_key:
+        try:
+            from groq import Groq
+
+            client = Groq(api_key=api_key)
+        except Exception as exc:
+            client = None
 
     columns = ", ".join(df.columns)
     numeric_cols = list(df.select_dtypes(include="number").columns)

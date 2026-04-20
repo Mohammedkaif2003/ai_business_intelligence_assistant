@@ -85,7 +85,9 @@ def _build_dataset_token_set(df: pd.DataFrame, schema: dict) -> set[str]:
             sample_values = df[col].dropna().astype(str).unique()[:10]
             for value in sample_values:
                 dataset_tokens.update(_tokenize_query_text(value))
-        except Exception:
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("tokenize_sample_values_failed", exc_info=True)
             continue
     return dataset_tokens
 

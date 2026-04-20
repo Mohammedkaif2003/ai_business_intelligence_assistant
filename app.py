@@ -12,6 +12,36 @@ from modules.app_secrets import get_secret
 # Load environment variables before importing app modules that may read secrets at import time.
 load_dotenv(override=True)
 
+# Centralized Streamlit session state initialization (do not overwrite existing values)
+try:
+    if "active_tab" not in st.session_state:
+        st.session_state["active_tab"] = "ai_analyst"
+    if "dataset_loaded" not in st.session_state:
+        st.session_state["dataset_loaded"] = False
+    if "current_chat_id" not in st.session_state:
+        st.session_state["current_chat_id"] = None
+    if "chats" not in st.session_state:
+        st.session_state["chats"] = []
+    # Restore persisted last active tab (if available) to return users to
+    # their previous context across reloads/logins. Stored in prompt cache.
+    try:
+        from modules.prompt_cache import get_global_state_value
+
+        last_tab = get_global_state_value("last_active_tab")
+        if last_tab:
+            st.session_state["active_tab"] = last_tab
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("app_init_failed", exc_info=True)
+    # Initialize page state for single-tab navigation
+    if "page" not in st.session_state:
+        st.session_state["page"] = "home"
+except Exception as exc:
+    # During some import-time executions (tests or headless runs) st.session_state
+    # may not be fully available; ignore initialization failures safely.
+    import logging
+    logging.getLogger(__name__).debug("app_session_state_init_failed", exc_info=True)
+
 # New separate files
 from config import APP_ICON, APP_TITLE, APP_VERSION, DATA_DIR, FRIENDLY_DATASET_NAMES
 from styles import inject_styles
@@ -21,7 +51,17 @@ from ui_components import (
 
 # Existing modules (do not rename)
 from modules.dataset_analyzer import analyze_dataset
-from modules.data_loader import normalize_columns
+from modules.data_loader import normalize_columns, load_dataset as _load_dataset_from_module
+import plotly.express as px
+import plotly.graph_objects as go
+
+
+def load_local_dataset(*args):
+    """Compatibility wrapper: accept (name, path) or (path,) and load CSV from filesystem."""
+    if not args:
+        raise ValueError("Missing path for local dataset")
+    path = args[-1]
+    return _load_dataset_from_module(path)
 from modules.dataset_activation import activate_dataset
 from utils.logging import get_logger
 from modules.app_state import ensure_analysis_state
@@ -105,7 +145,8 @@ def _save_remembered_auth(user: dict[str, str]) -> None:
         }
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(safe_payload, fh)
-    except Exception:
+    except Exception as exc:
+        logger.exception("failed_saving_remembered_auth", exc_info=True)
         return
 
 
@@ -114,7 +155,8 @@ def _clear_remembered_auth() -> None:
     try:
         if os.path.exists(path):
             os.remove(path)
-    except Exception:
+    except Exception as exc:
+        logger.exception("failed_clearing_remembered_auth", exc_info=True)
         return
 
 
@@ -145,6 +187,11 @@ def _restore_user_from_remember_me() -> bool:
     st.session_state["user"] = user_data
     _seed_auth_compat_keys()
     ensure_analysis_state()
+    # If a remembered user was restored, navigate to the app view
+    try:
+        st.session_state["page"] = "app"
+    except Exception:
+        pass
     return True
 
 
@@ -241,7 +288,8 @@ def _get_query_param(name: str) -> str:
         if isinstance(value, list):
             value = value[0] if value else ""
         return str(value or "").strip()
-    except Exception:
+    except Exception as exc:
+        logger.exception("failed_get_query_param", exc_info=True)
         return ""
 
 
@@ -250,7 +298,8 @@ def _clear_auth_query_params() -> None:
         try:
             if key in st.query_params:
                 del st.query_params[key]
-        except Exception:
+        except Exception as exc:
+            logger.exception("failed_clearing_query_param", extra={"key": key}, exc_info=True)
             continue
 
 
@@ -276,7 +325,8 @@ def _extract_recovery_access_token(url_text: str) -> str:
             or ""
         ).strip()
         return token
-    except Exception:
+    except Exception as exc:
+        logger.exception("failed_extract_recovery_token", exc_info=True)
         return ""
 
 
@@ -291,7 +341,8 @@ def _password_reset_redirect_url() -> str | None:
 
     try:
         return _with_query_params(configured, {"auth_action": "recovery"})
-    except Exception:
+    except Exception as exc:
+        logger.exception("failed_building_password_reset_url", exc_info=True)
         return configured
 
 
@@ -355,100 +406,13 @@ def load_dataset(file_bytes: bytes):
     df = normalize_columns(df)
     return df
 
-
-@st.cache_data(show_spinner=False)
-def load_local_dataset(path):
-    df = pd.read_csv(path)
-    df = normalize_columns(df)
-    return df
-
-
 def _render_login_shell() -> tuple[str, str, str, bool, bool, bool, bool, bool]:
+    """Render the login/signup form shell and return form values and actions."""
     st.markdown(
-        """
-        <style>
-            html, body, [data-testid="stApp"] {
-                height: 100vh !important;
-                overflow: hidden !important;
-            }
-
-            [data-testid="stSidebar"], [data-testid="collapsedControl"] {
-                display: none;
-            }
-
-            [data-testid="stAppViewContainer"] {
-                background:
-                    radial-gradient(900px 500px at 20% 5%, rgba(56, 189, 248, 0.15), rgba(2, 6, 23, 0) 60%),
-                    radial-gradient(900px 550px at 90% 90%, rgba(99, 102, 241, 0.14), rgba(2, 6, 23, 0) 65%),
-                    linear-gradient(165deg, #0b1220 0%, #070b14 55%, #03050a 100%);
-                height: 100vh !important;
-                overflow: hidden !important;
-                overscroll-behavior: none !important;
-            }
-
-            [data-testid="stAppViewContainer"] .main {
-                height: 100vh !important;
-                overflow: hidden !important;
-                overscroll-behavior: none !important;
-            }
-
-            .main .block-container {
-                max-width: 100%;
-                height: 100vh;
-                min-height: 100vh;
-                padding-top: 0 !important;
-                padding-bottom: 0 !important;
-                padding-left: 1rem !important;
-                padding-right: 1rem !important;
-                position: relative;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                overflow: hidden;
-                overscroll-behavior: none;
-            }
-
-            .main .block-container::before {
-                content: '';
-                position: absolute;
-                width: min(72vw, 760px);
-                height: min(72vw, 760px);
-                left: 50%;
-                top: 42%;
-                transform: translate(-50%, -50%);
-                background: radial-gradient(circle, rgba(56, 189, 248, 0.18) 0%, rgba(59, 130, 246, 0.12) 24%, rgba(15, 23, 42, 0) 70%);
-                filter: blur(10px);
-                pointer-events: none;
-                z-index: 0;
-                animation: haloPulse 10s ease-in-out infinite;
-            }
-
-            .auth-logo {
-                font-size: 28px;
-                margin-bottom: 16px;
-                animation: logoFloat 3s ease-in-out infinite;
-            }
-
-            .auth-brand {
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                padding: 4px 10px;
-                border-radius: 999px;
-                margin-bottom: 8px;
-                font-size: 0.78rem;
-                font-weight: 700;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-                color: #dbeafe;
-                background: linear-gradient(135deg, rgba(79, 70, 229, 0.24), rgba(59, 130, 246, 0.2));
-                border: 1px solid rgba(148, 163, 184, 0.24);
-            }
-
+        """<style>
             .auth-tagline {
-                margin-top: -14px;
-                margin-bottom: 18px;
+                margin-top: -8px;
+                margin-bottom: 12px;
                 color: rgba(203, 213, 225, 0.8);
                 font-size: 0.86rem;
                 letter-spacing: 0.03em;
@@ -473,38 +437,41 @@ def _render_login_shell() -> tuple[str, str, str, bool, bool, bool, bool, bool]:
                 color: #c6d5ea;
                 font-size: 15px;
                 line-height: 1.55;
-                margin-bottom: 30px;
+                margin-bottom: 12px;
                 font-family: 'Manrope', sans-serif;
                 opacity: 0.92;
                 font-weight: 600;
             }
 
             [data-testid="stForm"] {
-                width: min(420px, 94vw) !important;
-                margin: 0 !important;
-                position: fixed !important;
-                top: 50% !important;
-                left: 50% !important;
-                transform: translate(-50%, -50%) !important;
+                width: clamp(340px, 36vw, 520px) !important;
+                min-width: 340px !important;
+                max-width: 520px !important;
+                margin: 0 auto !important;
+                position: relative !important;
+                transform: none !important;
                 border: 1px solid rgba(255, 255, 255, 0.08) !important;
-                border-radius: 20px !important;
-                background: 
-                    linear-gradient(145deg, rgba(10, 26, 44, 0.62), rgba(6, 20, 36, 0.48)) !important;
-                backdrop-filter: blur(24px) !important;
-                -webkit-backdrop-filter: blur(24px) !important;
+                border-radius: 16px !important;
+                background: linear-gradient(145deg, rgba(10, 26, 44, 0.62), rgba(6, 20, 36, 0.48)) !important;
+                backdrop-filter: blur(12px) !important;
+                -webkit-backdrop-filter: blur(12px) !important;
                 box-shadow: 
                     0 14px 40px rgba(2, 10, 22, 0.48),
-                    0 0 36px rgba(0, 150, 255, 0.14),
-                    inset 0 1px 1px rgba(255, 255, 255, 0.08),
-                    inset 0 -1px 1px rgba(0, 0, 0, 0.24) !important;
-                padding: clamp(20px, 3.2vh, 36px) clamp(18px, 2.5vw, 28px) clamp(18px, 2.5vh, 28px) clamp(18px, 2.5vw, 28px) !important;
-                transition: all 300ms cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-                position: fixed !important;
-                overflow: hidden !important;
+                    0 0 36px rgba(0, 150, 255, 0.12),
+                    inset 0 1px 1px rgba(255, 255, 255, 0.06),
+                    inset 0 -1px 1px rgba(0, 0, 0, 0.18) !important;
+                padding: clamp(16px, 2.6vh, 24px) clamp(16px, 2.5vw, 20px) !important;
+                transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), max-width 240ms ease !important;
+                overflow: visible !important;
                 z-index: 2;
                 animation: authFadeIn 0.55s ease both;
                 max-height: 92dvh;
                 scrollbar-width: none;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                align-items: stretch;
+                box-sizing: border-box;
             }
 
             [data-testid="stForm"]::before {
@@ -534,29 +501,29 @@ def _render_login_shell() -> tuple[str, str, str, bool, bool, bool, bool, bool]:
             }
 
             [data-testid="stForm"]:hover {
-                transform: translate(-50%, -50%) !important;
+                transform: translateY(-6px) scale(1.02) !important;
                 border-color: rgba(255, 255, 255, 0.12) !important;
                 box-shadow: 
-                    0 14px 40px rgba(2, 10, 22, 0.48),
-                    0 0 44px rgba(0, 150, 255, 0.2),
-                    inset 0 1px 1px rgba(255, 255, 255, 0.08),
-                    inset 0 -1px 1px rgba(0, 0, 0, 0.2) !important;
+                    0 18px 48px rgba(2, 10, 22, 0.5),
+                    0 0 44px rgba(0, 150, 255, 0.18),
+                    inset 0 1px 1px rgba(255, 255, 255, 0.06),
+                    inset 0 -1px 1px rgba(0, 0, 0, 0.18) !important;
             }
 
             [data-testid="stForm"] .stTextInput {
-                margin-bottom: 16px;
+                margin-bottom: 8px;
                 position: relative;
-                padding-top: 16px;
+                padding-top: 12px;
             }
 
             [data-testid="stForm"] .stTextInput:last-of-type {
-                margin-bottom: 28px;
+                margin-bottom: 12px;
             }
 
             [data-testid="stForm"] .stTextInput label {
                 position: absolute;
-                top: 25px;
-                left: 14px;
+                top: 18px;
+                left: 12px;
                 margin: 0 !important;
                 z-index: 4;
                 pointer-events: none;
@@ -737,16 +704,46 @@ def _render_login_shell() -> tuple[str, str, str, bool, bool, bool, bool, bool]:
                 display: none !important;
             }
 
-            [data-testid="stForm"] div[data-baseweb="input"] [role="button"] {
-                display: none !important;
+            /* Show and style the password reveal toggle only for password inputs
+               so it merges with our theme and isn't hidden by BaseWeb/Streamlit. */
+            [data-testid="stForm"] div[data-baseweb="input"] input[type="password"] ~ [role="button"],
+            [data-testid="stForm"] div[data-baseweb="input"] input[type="password"] ~ [type="button"] {
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                background: transparent !important;
+                border: none !important;
+                color: #ffffff !important;
+                width: 36px !important;
+                height: 36px !important;
+                margin-right: 6px !important;
+                padding: 4px !important;
+                cursor: pointer !important;
             }
 
-            [data-testid="stForm"] div[data-baseweb="input"] [type="button"] {
-                display: none !important;
+            /* Ensure the icon inherits color and sizes nicely */
+            [data-testid="stForm"] div[data-baseweb="input"] input[type="password"] ~ [role="button"] svg,
+            [data-testid="stForm"] div[data-baseweb="input"] input[type="password"] ~ [type="button"] svg {
+                fill: currentColor !important;
+                width: 20px !important;
+                height: 20px !important;
             }
 
             [data-testid="stForm"] .stTextInput input {
                 padding-right: 0.75rem !important;
+            }
+
+            /* Make inputs and buttons stretch full width inside card */
+            [data-testid="stForm"] .stTextInput,
+            [data-testid="stForm"] div[data-baseweb="input"],
+            [data-testid="stForm"] div[data-baseweb="input"] > div,
+            [data-testid="stForm"] .stTextInput > div > div,
+            [data-testid="stForm"] input,
+            [data-testid="stForm"] [data-testid="stFormSubmitButton"],
+            [data-testid="stForm"] .stButton button,
+            [data-testid="stForm"] [data-testid="stFormSubmitButton"] button {
+                width: 100% !important;
+                box-sizing: border-box;
             }
 
             /* Hide native browser password reveal controls (Edge/Chromium). */
@@ -879,8 +876,9 @@ def _render_login_shell() -> tuple[str, str, str, bool, bool, bool, bool, bool]:
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                margin-top: -8px;
-                margin-bottom: 14px;
+                gap: 8px;
+                margin-top: 0;
+                margin-bottom: 12px;
             }
 
             .auth-meta-row [data-testid="stCheckbox"] {
@@ -945,7 +943,7 @@ def _render_login_shell() -> tuple[str, str, str, bool, bool, bool, bool, bool]:
             }
 
             .auth-reset-panel {
-                width: min(420px, 94vw);
+                width: clamp(300px, 30vw, 420px);
                 margin: 12px auto 0 auto;
                 border: 1px solid rgba(148, 163, 184, 0.2);
                 border-radius: 14px;
@@ -984,7 +982,60 @@ def _render_login_shell() -> tuple[str, str, str, bool, bool, bool, bool, bool]:
                     font-size: 24px !important;
                 }
             }
+            /* Center login card and disable all motion inside .login-page wrapper */
+            .login-page {
+                position: fixed !important;
+                inset: 0 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                box-sizing: border-box !important;
+                z-index: 9999 !important;
+                pointer-events: none !important;
+                overflow: hidden !important;
+                touch-action: none !important;
+            }
 
+            /* Prevent page scrolling while login is shown */
+            html, body, [data-testid="stAppViewContainer"], .main .block-container {
+                height: 100vh !important;
+                overflow: hidden !important;
+            }
+
+            /* Make form interactive while wrapper itself ignores pointer events */
+            .login-page > *,
+            .login-page [data-testid="stForm"] {
+                pointer-events: auto !important;
+            }
+
+            /* Center the form itself using fixed positioning to avoid DOM nesting issues */
+            [data-testid="stForm"] {
+                position: fixed !important;
+                left: 50% !important;
+                top: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                width: clamp(340px, 36vw, 520px) !important;
+                min-width: 340px !important;
+                max-width: 520px !important;
+                margin: 0 !important;
+                transition: none !important;
+                animation: none !important;
+                z-index: 10000 !important;
+            }
+
+            [data-testid="stForm"]::before,
+            [data-testid="stForm"]::after {
+                animation: none !important;
+                transition: none !important;
+            }
+
+            [data-testid="stForm"]:hover,
+            [data-testid="stForm"]:active,
+            [data-testid="stForm"]:focus {
+                transform: translate(-50%, -50%) !important;
+            }
             @keyframes authFadeIn {
                 from { opacity: 0; transform: translateY(12px); }
                 to { opacity: 1; transform: translateY(0); }
@@ -1008,6 +1059,7 @@ def _render_login_shell() -> tuple[str, str, str, bool, bool, bool, bool, bool]:
     auth_mode = str(st.session_state.get("auth_mode", "login") or "login").strip().lower()
     is_signup_mode = auth_mode == "signup"
 
+    st.markdown('<div class="login-page">', unsafe_allow_html=True)
     with st.form("auth_form", border=False):
         st.markdown('<div class="auth-brand">Apex Analytics</div>', unsafe_allow_html=True)
         st.markdown('<div class="auth-logo">📊</div>', unsafe_allow_html=True)
@@ -1071,7 +1123,194 @@ def _render_login_shell() -> tuple[str, str, str, bool, bool, bool, bool, bool]:
             with action_cols[1]:
                 do_back_to_login = st.form_submit_button("Back to Sign In", type="secondary", use_container_width=True)
 
+    st.markdown('</div>', unsafe_allow_html=True)
     return email, password, confirm_password, do_login, do_signup_submit, do_open_signup, do_back_to_login, do_forgot
+
+
+def _render_home_page() -> None:
+    """Render a minimal landing/home page that links to the login flow."""
+    # Scoped CSS: lock viewport and remove scroll while home page is shown
+    st.markdown(
+        """
+        <style>
+            /* Lock viewport and prevent scrolling while home is visible */
+            html, body, [data-testid="stAppViewContainer"], .main .block-container {
+                height: 100vh !important;
+                max-height: 100vh !important;
+                overflow: hidden !important;
+                overscroll-behavior: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            .home-page {
+                position: fixed !important;
+                inset: 0 !important;
+                display:flex !important;
+                align-items:center !important;
+                justify-content:center !important;
+                overflow:hidden !important;
+                padding: 0 20px !important;
+                box-sizing: border-box !important;
+                z-index: 10000 !important;
+                background: linear-gradient(165deg, #0b1220 0%, #070b14 55%, #03050a 100%);
+            }
+
+            .home-content {
+                width:100%;
+                max-width: 1100px;
+                box-sizing: border-box;
+            }
+
+            /* Prevent horizontal overflow on small screens */
+            .home-content > * { max-width: 100%; box-sizing: border-box; }
+            @media (max-width:560px) {
+                .home-page { padding: 12px !important; }
+            }
+
+            /* Eye-catching CTA styles (purely visual) */
+            .home-cta {
+                display: inline-block;
+                padding: 12px 22px;
+                border-radius: 12px;
+                font-weight: 800;
+                font-size: 16px;
+                line-height: 1;
+                cursor: pointer;
+                transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+                border: none;
+                text-decoration: none;
+                -webkit-appearance: none;
+            }
+
+            .home-cta--primary {
+                background: linear-gradient(90deg, #7c3aed 0%, #4f46e5 100%);
+                color: #ffffff;
+                box-shadow: 0 8px 24px rgba(79,70,229,0.18), 0 2px 6px rgba(2,6,23,0.6) inset;
+            }
+
+            .home-cta--secondary {
+                background: rgba(255,255,255,0.02);
+                color: #d1d5db;
+                border: 1px solid rgba(255,255,255,0.06);
+                box-shadow: 0 6px 18px rgba(2,6,23,0.5);
+            }
+
+            .home-cta:hover, .home-cta:focus {
+                transform: translateY(-4px);
+                box-shadow: 0 18px 40px rgba(79,70,229,0.20), 0 6px 24px rgba(2,6,23,0.6);
+                opacity: 0.98;
+                outline: none;
+            }
+
+            .home-cta:active {
+                transform: translateY(-1px) scale(0.995);
+                box-shadow: 0 8px 20px rgba(2,6,23,0.6);
+            }
+
+            .home-cta:focus-visible {
+                box-shadow: 0 18px 40px rgba(79,70,229,0.20), 0 6px 24px rgba(2,6,23,0.6);
+                outline: 3px solid rgba(124,58,237,0.18);
+                outline-offset: 3px;
+            }
+
+            /* Feature cards: glass effect and professional typography */
+            .feature-grid {
+                display:grid;
+                grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+                gap:16px;
+                max-width:920px;
+                width:100%;
+            }
+
+            .feature-card {
+                padding:18px 20px;
+                border-radius:14px;
+                background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.01) 100%);
+                border: 1px solid rgba(255,255,255,0.04);
+                backdrop-filter: blur(8px) saturate(120%);
+                -webkit-backdrop-filter: blur(8px) saturate(120%);
+                box-shadow: 0 12px 30px rgba(2,6,23,0.6);
+                color: #e6eefc;
+                text-align:left;
+                transition: transform 180ms ease, box-shadow 180ms ease;
+            }
+
+            .feature-card:hover, .feature-card:focus-within {
+                transform: translateY(-6px);
+                box-shadow: 0 28px 60px rgba(2,6,23,0.7);
+            }
+
+            .feature-card__title {
+                font-family: 'Sora', 'Inter', Arial, sans-serif;
+                font-weight: 700;
+                font-size: 18px;
+                color: #ffffff;
+                display:block;
+                margin-bottom:8px;
+                letter-spacing: -0.01em;
+            }
+
+            .feature-card__desc {
+                font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+                font-size: 15px;
+                color: rgba(203,213,225,0.88);
+                line-height:1.45;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="home-page">
+            <div class="home-content">
+                <!-- Top-right Login button removed because 'Get Started' already links to login -->
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;padding:40px;text-align:center;">
+                    <h1 style="margin:0;font-size:42px;color:#fff;font-family:'Sora',sans-serif;">Apex Analytics</h1>
+                    <p style="margin-top:8px;color:rgba(203,213,225,0.9);font-size:18px;max-width:880px;">Analyze datasets, generate insights, and chat with your data using AI</p>
+                    <div style="height:18px"></div>
+                    <div style="display:flex;gap:24px;align-items:center;justify-content:center;margin-top:18px;margin-bottom:8px;">
+                        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+                            <form method="get" action="/" style="display:inline;margin:0;padding:0;">
+                                <input type="hidden" name="route" value="login" />
+                                <button type="submit" class="home-cta home-cta--primary">Get Started</button>
+                            </form>
+                            <div style="color:rgba(203,213,225,0.8);font-size:14px;">Create an account or sign in</div>
+                        </div>
+                        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+                            <form method="get" action="/" style="display:inline;margin:0;padding:0;">
+                                <input type="hidden" name="route" value="demo" />
+                                <button type="submit" class="home-cta home-cta--secondary">View Demo</button>
+                            </form>
+                            <div style="color:rgba(203,213,225,0.8);font-size:14px;">Explore the demo — no signup required.</div>
+                        </div>
+                    </div>
+                    <div class="feature-grid">
+                        <div class="feature-card" role="group" aria-label="Chat feature">
+                            <span class="feature-card__title">Chat</span>
+                            <div class="feature-card__desc">Ask natural-language questions about your data.</div>
+                        </div>
+                        <div class="feature-card" role="group" aria-label="Dashboard feature">
+                            <span class="feature-card__title">Dashboard</span>
+                            <div class="feature-card__desc">Quick summaries and KPIs for datasets.</div>
+                        </div>
+                        <div class="feature-card" role="group" aria-label="Forecasting feature">
+                            <span class="feature-card__title">Forecasting</span>
+                            <div class="feature-card__desc">Time-series forecasts and scenario projections.</div>
+                        </div>
+                        <div class="feature-card" role="group" aria-label="Reports feature">
+                            <span class="feature-card__title">Reports</span>
+                            <div class="feature-card__desc">Exportable insights and charts.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def show_login() -> None:
@@ -1253,6 +1492,8 @@ def show_login() -> None:
                 st.session_state["auth_mode"] = "login"
                 _seed_auth_compat_keys()
                 ensure_analysis_state()
+                # Navigate to app view after successful sign up + sign in
+                st.session_state["page"] = "app"
                 st.rerun()
             else:
                 st.success(message)
@@ -1278,6 +1519,8 @@ def show_login() -> None:
                 _clear_remembered_auth()
             _seed_auth_compat_keys()
             ensure_analysis_state()
+            # Navigate to app view after successful login
+            st.session_state["page"] = "app"
             st.rerun()
         else:
             st.error(message)
@@ -1296,6 +1539,11 @@ def _logout() -> None:
         st.session_state["auth_email_input"] = remembered_email
     st.session_state["auth_remember_me"] = False
     st.session_state["auth_remember_me_initialized"] = True
+    # Ensure we return to the home page after logout
+    try:
+        st.session_state["page"] = "home"
+    except Exception:
+        pass
     st.rerun()
 
 
@@ -1354,8 +1602,8 @@ def _handle_history_deletion() -> None:
                         "cloud_chat_history_delete_failed",
                         extra={"history_id": delete_history_id},
                     )
-            except Exception:
-                logger.exception("cloud_delete_error")
+            except Exception as exc:
+                logger.exception("cloud_delete_error", exc_info=True)
 
         # Remove locally everywhere (session + cached dataset states).
         local_deleted = delete_chat_history_everywhere(delete_history_id)
@@ -1462,9 +1710,10 @@ def show_app() -> None:
         _render_no_dataset_workspace(st.session_state.get("active_page", "overview"))
         return
 
-    active_page = render_main_navigation(logger)
-    
-    # Render tab content unconditionally (removed last_page guard blocking tabs)
+    # Render main navigation (updates `st.session_state.active_tab`)
+    _ = render_main_navigation(logger)
+
+    # Render tab content controlled by `st.session_state.active_tab` (do not overwrite UI)
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
     df = st.session_state["df"]
@@ -1472,8 +1721,33 @@ def show_app() -> None:
     schema = st.session_state.get("schema", analyze_dataset(df))
     record_timing("schema_build_ms", (time.perf_counter() - schema_started) * 1000)
 
-    from components import app_pages
-    app_pages.render_loaded_dataset_workspace(active_page, df, schema, api_key, st.session_state["dataset_name"])
+    # Helper renderers that delegate to existing component functions.
+    def render_ai_analyst():
+        render_sidebar_dataset_badge(st.session_state.get("dataset_name"), df.shape[0], df.shape[1])
+        render_dashboard_header(df)
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:20px; margin-bottom:10px;'></div>", unsafe_allow_html=True)
+        render_chat_page(df, schema, api_key, logger)
+
+    def render_dashboard():
+        render_sidebar_dataset_badge(st.session_state.get("dataset_name"), df.shape[0], df.shape[1])
+        render_dashboard_header(df)
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:20px; margin-bottom:10px;'></div>", unsafe_allow_html=True)
+        render_data_overview_page(df)
+
+    # Determine which content to render by normalizing `active_tab`.
+    active_tab = str(st.session_state.get("active_tab", "")).strip()
+    # Accept both internal ids and human-friendly labels.
+    if active_tab.lower() in {"ai_analyst", "ai analyst", "chat"}:
+        render_ai_analyst()
+    elif active_tab.lower() in {"dashboard", "data overview", "overview"}:
+        render_dashboard()
+    else:
+        # Fallback: map known pages from render_main_navigation's active_page
+        from components import app_pages
+        active_page = st.session_state.get("active_page", "overview")
+        app_pages.render_loaded_dataset_workspace(active_page, df, schema, api_key, st.session_state["dataset_name"])
     record_timing("app_total_render_ms", (time.perf_counter() - app_started) * 1000)
 
     perf_timings = st.session_state.get("perf_timings", {})
@@ -1484,11 +1758,368 @@ def show_app() -> None:
                 st.caption(f"{metric_name}: {metric_value:.2f} ms")
 
 
+def show_demo() -> None:
+    """Show a read-only demo using bundled sales_data.csv. Safe for unauthenticated users."""
+    try:
+        st.markdown(
+            '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
+            "<span style=\"background:rgba(255,255,255,0.03);padding:6px 10px;border-radius:999px;font-weight:700;\">Demo mode — sample data</span></div>",
+            unsafe_allow_html=True,
+        )
+
+        demo_file = os.path.join(os.path.dirname(__file__), DATA_DIR, "sales_data.csv")
+        if not os.path.exists(demo_file):
+            st.error("Demo dataset not available.")
+            return
+
+        demo_df = pd.read_csv(demo_file)
+        demo_df = normalize_columns(demo_df)
+
+        # Flexible column detection (handles case, spacing, and punctuation differences)
+        import re
+
+        def _norm(s: str) -> str:
+            return re.sub(r"[^0-9a-z]", "_", str(s or "").lower()).strip("_")
+
+        norm_map = {_norm(c): c for c in demo_df.columns}
+
+        def _find(*candidates: str):
+            for c in candidates:
+                key = _norm(c)
+                if key in norm_map:
+                    return norm_map[key]
+            return None
+
+        rev_col = _find("revenue", "sales", "sales_amount", "total_sales")
+        qty_col = _find("quantity", "units", "units_sold", "units sold")
+        prod_col = _find("product", "item", "product_name")
+        region_col = _find("region", "location", "area")
+        year_col = _find("year")
+        month_col = _find("month")
+        date_col = _find("date")
+        year_month_col = _find("year_month", "year month", "year-month", "yearmonth", "year month")
+
+        # Build a series for monthly grouping (avoid relying on a literal column name)
+        if year_month_col:
+            ym_series = demo_df[year_month_col].astype(str)
+        elif year_col and month_col:
+            try:
+                ym_series = demo_df[year_col].astype(str) + "-" + demo_df[month_col].astype(int).astype(str).str.zfill(2)
+            except Exception:
+                ym_series = demo_df.index.astype(str)
+        elif date_col:
+            try:
+                demo_df[date_col] = pd.to_datetime(demo_df[date_col], errors="coerce")
+                ym_series = demo_df[date_col].dt.to_period("M").astype(str)
+            except Exception:
+                ym_series = demo_df.index.astype(str)
+        else:
+            ym_series = demo_df.index.astype(str)
+
+        def _safe_sum(col_name: str) -> float:
+            if not col_name or col_name not in demo_df.columns:
+                return 0.0
+            try:
+                return float(pd.to_numeric(demo_df[col_name], errors="coerce").sum())
+            except Exception:
+                return 0.0
+
+        def _safe_mean(col_name: str) -> float:
+            if not col_name or col_name not in demo_df.columns:
+                return 0.0
+            try:
+                return float(pd.to_numeric(demo_df[col_name], errors="coerce").mean())
+            except Exception:
+                return 0.0
+
+        def _render_dark_table(df: pd.DataFrame, cols: list | None = None, headers: list | None = None) -> None:
+            """Render a dark-styled Plotly table for the given DataFrame (demo-only)."""
+            try:
+                df2 = df.copy()
+                cols = cols or list(df2.columns)
+                headers = headers or cols
+                cell_values = [df2[c].astype(str).tolist() for c in cols]
+                fill_row = ["rgba(7,18,30,0.86)" for _ in range(len(df2))]
+                fig = go.Figure(
+                    data=[
+                        go.Table(
+                            header=dict(values=headers, fill_color="#071827", align="left", font=dict(color="#f8fbff", size=12)),
+                            cells=dict(values=cell_values, fill_color=[fill_row for _ in cols], align="left", font=dict(color="#eef5ff", size=11)),
+                        )
+                    ]
+                )
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", margin=dict(l=8, r=8, t=8, b=8))
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception:
+                return
+
+        total_revenue = _safe_sum(rev_col) if not demo_df.empty else 0.0
+        total_units = int(_safe_sum(qty_col)) if not demo_df.empty else 0
+        avg_margin = _safe_mean(_find("profit_margin", "profit margin", "profitmargin", "profit_margin")) if not demo_df.empty else 0.0
+
+        col1, col2, col3 = st.columns([1, 1, 1])
+        col1.metric("Revenue", f"${total_revenue:,.0f}")
+        col2.metric("Units sold", f"{total_units:,}")
+        col3.metric("Avg profit margin", f"{avg_margin:.1f}%")
+
+        st.markdown("---")
+
+        st.subheader("Try sample queries")
+        sample_queries = [
+            "Revenue by month (last 12 months)",
+            "Top 5 products by revenue",
+            "Which region grew fastest YoY?",
+            "Find anomalies (last 6 months)",
+        ]
+
+        chips_cols = st.columns(len(sample_queries))
+        for i, q in enumerate(sample_queries):
+            if chips_cols[i].button(q, key=f"demo_q_{i}"):
+                st.session_state["demo_query"] = q
+
+        demo_query = st.session_state.get("demo_query", "")
+        if demo_query:
+            st.markdown(f"**Result — {demo_query}**")
+            if "Revenue by month" in demo_query:
+                if rev_col:
+                    try:
+                        monthly = demo_df.groupby(ym_series, sort=False)[rev_col].sum()
+                        try:
+                            monthly = monthly.reindex(sorted(monthly.index))
+                        except Exception:
+                            pass
+                        monthly_df = monthly.reset_index()
+                        monthly_df.columns = ["period", "value"]
+                        try:
+                            fig = px.line(
+                                monthly_df,
+                                x="period",
+                                y="value",
+                                markers=True,
+                                template="plotly_dark",
+                                labels={"period": "Month", "value": f"{rev_col}"},
+                            )
+                            fig.update_traces(line=dict(color="#38bdf8", width=3), marker=dict(size=6, color="#38bdf8"))
+                            fig.update_layout(
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                font_color="#eef5ff",
+                                margin=dict(l=40, r=12, t=20, b=40),
+                            )
+                            fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.04)", zeroline=False)
+                            fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.04)", zeroline=False, tickprefix="$")
+                            st.plotly_chart(fig, use_container_width=True)
+                        except Exception:
+                            st.line_chart(monthly)
+                        
+                        # Render dark-themed table for monthly revenue
+                        try:
+                            table_df = monthly_df.copy()
+                            table_df.columns = ["Month", rev_col]
+                            table_df[rev_col] = pd.to_numeric(table_df[rev_col], errors="coerce").fillna(0).apply(lambda v: f"${v:,.0f}")
+                            _render_dark_table(table_df, cols=["Month", rev_col], headers=["Month", "Revenue"])
+                        except Exception:
+                            pass
+                    except Exception:
+                        st.info("Failed to compute monthly revenue for demo data.")
+                else:
+                    st.info("No revenue column available in demo data.")
+            elif "Top 5 products" in demo_query:
+                if prod_col and rev_col:
+                    try:
+                        top = demo_df.groupby(prod_col)[rev_col].sum().nlargest(5)
+                        top_df = top.reset_index()
+                        top_df.columns = [prod_col, rev_col]
+                        try:
+                            fig = px.bar(
+                                top_df,
+                                x=prod_col,
+                                y=rev_col,
+                                template="plotly_dark",
+                                color_discrete_sequence=["#f59e0b"],
+                            )
+                            fig.update_traces(texttemplate="$%{y:,.0f}", textposition="outside")
+                            fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="#eef5ff", margin=dict(l=40, r=12, t=20, b=40))
+                            fig.update_yaxes(tickprefix="$", gridcolor="rgba(255,255,255,0.04)")
+                            st.plotly_chart(fig, use_container_width=True)
+                        except Exception:
+                            st.bar_chart(top)
+                        # Render dark-themed table for top products
+                        try:
+                            table_df = top_df.copy()
+                            table_df[rev_col] = pd.to_numeric(table_df[rev_col], errors="coerce").fillna(0).apply(lambda v: f"${v:,.0f}")
+                            _render_dark_table(table_df, cols=[prod_col, rev_col], headers=[prod_col, "Revenue"])
+                        except Exception:
+                            pass
+                    except Exception:
+                        st.info("Failed to compute top products for demo data.")
+                else:
+                    st.info("No product or revenue column available in demo data.")
+            elif "region grew fastest" in demo_query:
+                if year_col and region_col and rev_col:
+                    try:
+                        df_year = demo_df.copy()
+                        df_year[year_col] = pd.to_numeric(df_year[year_col], errors="coerce")
+                        current_year = int(df_year[year_col].max())
+                        prev_year = current_year - 1
+                        cur = df_year[df_year[year_col] == current_year].groupby(region_col)[rev_col].sum()
+                        prev = df_year[df_year[year_col] == prev_year].groupby(region_col)[rev_col].sum()
+                        growth = ((cur - prev) / prev.replace(0, 1) * 100).fillna(0).sort_values(ascending=False)
+                        growth_df = growth.rename("yoy_pct").reset_index()
+                        growth_df.columns = [region_col, "yoy_pct"]
+                        try:
+                            fig = px.bar(
+                                growth_df,
+                                x=region_col,
+                                y="yoy_pct",
+                                template="plotly_dark",
+                                color_discrete_sequence=["#22c55e"],
+                            )
+                            fig.update_traces(texttemplate="%{y:.2f}%", textposition="auto")
+                            fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="#eef5ff", margin=dict(l=40, r=12, t=20, b=40))
+                            fig.update_yaxes(gridcolor="rgba(255,255,255,0.04)")
+                            st.plotly_chart(fig, use_container_width=True)
+                        except Exception:
+                            st.table(growth.rename("YoY %").map(lambda v: f"{v:.2f}%").to_frame())
+                        # Render dark-themed table for YoY growth
+                        try:
+                            table_df = growth_df.copy()
+                            table_df["yoy_pct"] = table_df["yoy_pct"].apply(lambda v: f"{v:.2f}%")
+                            _render_dark_table(table_df, cols=[region_col, "yoy_pct"], headers=[region_col, "YoY %"])
+                        except Exception:
+                            pass
+                    except Exception:
+                        st.info("Not enough historical data for YoY comparison in demo dataset.")
+                else:
+                    st.info("Not enough historical data for YoY comparison in demo dataset.")
+            elif "anomalies" in demo_query:
+                if rev_col:
+                    try:
+                        monthly = demo_df.groupby(ym_series)[rev_col].sum()
+                        m, s = monthly.mean(), monthly.std()
+                        anomalies = monthly[monthly < (m - 2 * s)]
+                        if anomalies.empty:
+                            st.info("No significant anomalies found in the demo data.")
+                        else:
+                            an_df = anomalies.rename(rev_col).reset_index()
+                            an_df.columns = ["period", rev_col]
+                            try:
+                                fig = go.Figure(data=[
+                                    go.Table(
+                                        header=dict(values=["Period", f"{rev_col}"], fill_color="#071827", font=dict(color="#f8fbff", family="Manrope,Segoe UI", size=12)),
+                                        cells=dict(values=[an_df["period"], an_df[rev_col]], fill_color=[["rgba(7,18,30,0.86)" for _ in range(len(an_df))],["rgba(7,18,30,0.86)" for _ in range(len(an_df))]], font=dict(color="#eef5ff", family="Manrope,Segoe UI", size=12))
+                                    )
+                                ])
+                                fig.update_layout(template="plotly_dark", plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", margin=dict(l=8, r=8, t=8, b=8))
+                                st.plotly_chart(fig, use_container_width=True)
+                            except Exception:
+                                st.table(anomalies)
+                    except Exception:
+                        st.info("Failed to compute anomalies for demo data.")
+                else:
+                    st.info("No monthly data available for anomaly detection.")
+
+        st.markdown("### Sample data")
+        try:
+            sample_df = demo_df.head(200).copy()
+            from pandas.api.types import is_numeric_dtype
+
+            def _format_demo_columns(df):
+                for c in df.columns:
+                    try:
+                        if is_numeric_dtype(df[c]):
+                            lower = str(c).lower()
+                            if any(k in lower for k in ("revenue", "profit", "amount", "sales", "total")):
+                                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).apply(lambda v: f"${v:,.2f}")
+                            elif any(k in lower for k in ("margin", "pct", "percent")):
+                                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).apply(lambda v: f"{v:.1f}%")
+                            else:
+                                df[c] = df[c]
+                    except Exception:
+                        df[c] = df[c].astype(str)
+                return df
+
+            sample_df = _format_demo_columns(sample_df)
+            _render_dark_table(sample_df, cols=list(sample_df.columns), headers=list(sample_df.columns))
+        except Exception:
+            try:
+                st.dataframe(demo_df.head(200))
+            except Exception:
+                st.write(demo_df.head(50))
+
+        cols = st.columns([1, 1, 1])
+        if cols[0].button("Reset demo"):
+            st.session_state.pop("demo_query", None)
+            if hasattr(st, "rerun"):
+                st.rerun()
+            elif hasattr(st, "experimental_rerun"):
+                st.experimental_rerun()
+        if cols[1].button("Back to Home"):
+            st.session_state["page"] = "home"
+            if hasattr(st, "rerun"):
+                st.rerun()
+            elif hasattr(st, "experimental_rerun"):
+                st.experimental_rerun()
+
+    except Exception as exc:
+        logger.exception("demo_unexpected_error", exc_info=True)
+        st.error("Demo currently unavailable.")
+
+
 if "user" not in st.session_state and st.session_state.get("_remember_me_checked") is None:
     st.session_state["_remember_me_checked"] = True
     _restore_user_from_remember_me()
 
+# Session-state-based single-tab routing.
+# Seed page from query param once if an external link used `?route=`.
+route_param = _get_query_param("route").lower() if _get_query_param("route") else ""
+if route_param and route_param != st.session_state.get("page", ""):
+    st.session_state["page"] = route_param
+    try:
+        if "route" in st.query_params:
+            del st.query_params["route"]
+    except Exception:
+        pass
+    if hasattr(st, "rerun"):
+        st.rerun()
+    elif hasattr(st, "experimental_rerun"):
+        st.experimental_rerun()
+
+page = st.session_state.get("page", "home")
+
 if "user" not in st.session_state:
-    show_login()
+    # Unauthenticated flow
+    if page == "app":
+        # Protected page — redirect to login via session state
+        st.session_state["page"] = "login"
+        if hasattr(st, "rerun"):
+            st.rerun()
+        elif hasattr(st, "experimental_rerun"):
+            st.experimental_rerun()
+    elif page == "demo":
+        # Demo view accessible without login
+        try:
+            show_demo()
+        except Exception:
+            st.error("Demo currently unavailable.")
+    elif page in {"login", "auth"}:
+        show_login()
+    else:
+        # Default (root) -> landing/home
+        _render_home_page()
 else:
-    show_app()
+    # Authenticated flow — ensure logged-in users see the app view
+    if page in {"", "home"}:
+        st.session_state["page"] = "app"
+        if hasattr(st, "rerun"):
+            st.rerun()
+        elif hasattr(st, "experimental_rerun"):
+            st.experimental_rerun()
+    elif page in {"login", "auth"}:
+        st.session_state["page"] = "app"
+        if hasattr(st, "rerun"):
+            st.rerun()
+        elif hasattr(st, "experimental_rerun"):
+            st.experimental_rerun()
+    else:
+        show_app()

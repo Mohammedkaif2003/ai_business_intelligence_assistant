@@ -24,7 +24,10 @@ def _load_cache_data() -> dict[str, Any]:
         with open(path, "r", encoding="utf-8") as file:
             payload = json.load(file)
         return payload if isinstance(payload, dict) else {}
-    except Exception:
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).exception("failed_loading_prompt_cache", exc_info=True)
         return {}
 
 
@@ -203,3 +206,36 @@ def clear_cache_for_dataset(dataset_cache_key: str) -> None:
                 entry["response_cache"] = {}  # Clear responses but keep try_asking_questions
                 cache[dataset_cache_key] = entry
                 _save_cache_data(cache)
+
+
+def get_global_state_value(key: str):
+    """Get a global app-level persisted value from the cache file.
+
+    This is stored under a reserved top-level key `_global` in the cache file.
+   """
+    key = str(key or "").strip()
+    if not key:
+        return None
+
+    with _CACHE_LOCK:
+        cache = _load_cache_data()
+        global_state = cache.get("_global", {}) if isinstance(cache.get("_global", {}), dict) else {}
+        return global_state.get(key)
+
+
+def save_global_state_value(key: str, value) -> None:
+    """Persist a single global app-level key/value to the cache file.
+
+    Uses a reserved top-level key `_global` in the same JSON cache used
+    for per-dataset persistence.
+   """
+    key = str(key or "").strip()
+    if not key:
+        return
+
+    with _CACHE_LOCK:
+        cache = _load_cache_data()
+        global_state = cache.get("_global", {}) if isinstance(cache.get("_global", {}), dict) else {}
+        global_state[key] = value
+        cache["_global"] = global_state
+        _save_cache_data(cache)

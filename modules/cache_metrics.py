@@ -7,6 +7,7 @@ Tracks hit rate, cache size on disk, age of cached entries, etc.
 import json
 import os
 import time
+import logging
 from typing import Any
 
 
@@ -36,7 +37,7 @@ def _load_stats() -> dict[str, Any]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except Exception as exc:
         return {
             "total_cache_hits": 0,
             "total_cache_misses": 0,
@@ -54,8 +55,8 @@ def _save_stats(stats: dict[str, Any]) -> None:
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(stats, f, indent=2)
         os.replace(temp_path, path)
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).exception("failed_saving_cache_metrics")
 
 
 def record_cache_hit(dataset_key: str, query_hash: str) -> None:

@@ -9,6 +9,7 @@ def log_event(event_name: str, **kwargs) -> None:
     try:
         logger = get_logger("telemetry")
         logger.info(f"telemetry:{event_name}", extra={"meta": kwargs or {}})
-    except Exception:
-        # Telemetry must never raise
-        pass
+    except Exception as exc:
+        # Telemetry must never raise; log minimally for diagnostics
+        import logging
+        logging.getLogger(__name__).debug("telemetry_failed", exc_info=True)

@@ -123,7 +123,7 @@ def build_overview_hero_chart(dataframe):
                 )
                 fig.update_layout(title=f"{metric_col} Trend by {axis_col}", height=360)
                 return fig
-        except Exception:
+        except Exception as exc:
             continue
 
     category_cols = dataframe.select_dtypes(exclude="number").columns.tolist()
@@ -147,7 +147,7 @@ def build_overview_hero_chart(dataframe):
                 )
                 fig.update_layout(height=360, coloraxis_showscale=False)
                 return fig
-        except Exception:
+        except Exception as exc:
             continue
 
     return None

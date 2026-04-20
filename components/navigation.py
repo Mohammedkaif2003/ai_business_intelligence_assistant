@@ -1,6 +1,7 @@
 import streamlit as st
 import contextlib
 import time
+import logging
 
 NAV_OPTIONS = [
     ("overview", "Data Overview"),
@@ -49,50 +50,48 @@ def render_main_navigation(logger=None) -> str:
         st.markdown('<div class="top-tabs">', unsafe_allow_html=True)
         # If Streamlit supports columns/buttons, render custom pill buttons.
         if hasattr(st, "columns") and hasattr(st, "button"):
+            # Use callbacks to set session state to avoid extra reruns.
+            def _set_nav(page_id: str, index: int):
+                st.session_state["active_page"] = page_id
+                st.session_state["active_tab"] = _label_for(page_id)
+                st.session_state["visual_tabs"] = index
+                # Persist last active tab for restoration across reloads/logins
+                try:
+                    from modules.prompt_cache import save_global_state_value
+
+                    save_global_state_value("last_active_tab", st.session_state.get("active_tab"))
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).debug("navigation_render_failed", exc_info=True)
+
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 is_active = st.session_state.get("active_page") == "overview"
-                if st.button("Data Overview", key="tab_overview"):
-                    st.session_state["active_page"] = "overview"
-                    st.session_state["active_tab"] = _label_for("overview")
-                    st.session_state["visual_tabs"] = 0
-                    st.rerun()
+                st.button("Data Overview", key="tab_overview", on_click=_set_nav, args=("overview", 0))
                 if is_active:
                     st.markdown('<div style="position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); width: 24px; height: 3px; background: #3B82F6; border-radius: 2px;"></div>', unsafe_allow_html=True)
             with col2:
                 is_active = st.session_state.get("active_page") == "chat"
-                if st.button("AI Analyst", key="tab_chat"):
-                    st.session_state["active_page"] = "chat"
-                    st.session_state["active_tab"] = _label_for("chat")
-                    st.session_state["visual_tabs"] = 1
-                    st.rerun()
+                st.button("AI Analyst", key="tab_chat", on_click=_set_nav, args=("chat", 1))
                 if is_active:
                     st.markdown('<div style="position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); width: 24px; height: 3px; background: #3B82F6; border-radius: 2px;"></div>', unsafe_allow_html=True)
             with col3:
                 is_active = st.session_state.get("active_page") == "forecast"
-                if st.button("Forecasting", key="tab_forecast"):
-                    st.session_state["active_page"] = "forecast"
-                    st.session_state["active_tab"] = _label_for("forecast")
-                    st.session_state["visual_tabs"] = 2
-                    st.rerun()
+                st.button("Forecasting", key="tab_forecast", on_click=_set_nav, args=("forecast", 2))
                 if is_active:
                     st.markdown('<div style="position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); width: 24px; height: 3px; background: #3B82F6; border-radius: 2px;"></div>', unsafe_allow_html=True)
             with col4:
                 is_active = st.session_state.get("active_page") == "reports"
-                if st.button("Reports", key="tab_reports"):
-                    st.session_state["active_page"] = "reports"
-                    st.session_state["active_tab"] = _label_for("reports")
-                    st.session_state["visual_tabs"] = 3
-                    st.rerun()
+                st.button("Reports", key="tab_reports", on_click=_set_nav, args=("reports", 3))
                 if is_active:
                     st.markdown('<div style="position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); width: 24px; height: 3px; background: #3B82F6; border-radius: 2px;"></div>', unsafe_allow_html=True)
         else:
             # Fallback: use Streamlit's tabs widget when available in mock or runtime
             try:
                 st.tabs([label for _, label in NAV_OPTIONS], key="visual_tabs")
-            except Exception:
-                # some minimal mocks may not implement tabs; ignore
-                pass
+            except Exception as exc:
+                # some minimal mocks may not implement tabs; log for diagnostics
+                logging.getLogger(__name__).debug("tabs_not_supported_in_streamlit_mock", exc_info=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -114,9 +113,9 @@ def render_main_navigation(logger=None) -> str:
         active_page = new_page_id
         try:
             st.rerun()
-        except Exception:
-            # Some Streamlit test mocks may not implement rerun; ignore
-            pass
+        except Exception as exc:
+            # Some Streamlit test mocks may not implement rerun; log for diagnostics
+            logging.getLogger(__name__).debug("st.rerun not available", exc_info=True)
 
     previous_page = st.session_state.get("last_active_page", active_page)
     if active_page != previous_page and logger:

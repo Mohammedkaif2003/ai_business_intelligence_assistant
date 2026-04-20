@@ -1,9 +1,9 @@
-from groq import Groq
 from dotenv import load_dotenv
 
 from modules.app_secrets import get_secret
+from modules.ai_service_new import get_groq_client
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 # Central Groq configuration so changes are in one place
 GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
@@ -32,7 +32,9 @@ def _build_dataset_info(query, df, schema, dataset_name=None) -> str:
         try:
             unique_vals = df[col].dropna().unique()[:5]
             sample_values += f"  {col}: {', '.join(str(v) for v in unique_vals)}\n"
-        except Exception:
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("build_dataset_info_sample_error", exc_info=True)
             continue
 
     dataset_label = _format_dataset_label(dataset_name)
@@ -66,11 +68,9 @@ def suggest_business_questions(query, df, schema, dataset_name=None):
     This is intentionally kept as a separate, optional call because it can
     add noticeable latency and token usage.
     """
-    groq_api_key = get_secret("GROQ_API_KEY")
-    if not groq_api_key:
+    client = get_groq_client()
+    if not client:
         return "AI suggestion failed: Groq API key is not configured."
-
-    client = Groq(api_key=groq_api_key)
 
     dataset_info = _build_dataset_info(query, df, schema, dataset_name)
     dataset_label = _format_dataset_label(dataset_name)
@@ -125,6 +125,8 @@ RULES:
         return response.choices[0].message.content
 
     except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception("suggest_business_questions_failed", exc_info=True)
         if _is_rate_limit_error(e):
             return "AI suggestion paused: Groq rate limit reached. Please wait a moment and try again."
         return f"AI suggestion failed: {str(e)}"

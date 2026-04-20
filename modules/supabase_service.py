@@ -4,14 +4,18 @@ import time
 from typing import Any
 
 import requests
+import streamlit as st
+import logging
 
 from modules.app_secrets import get_secret
+from modules.app_perf import record_timing
 
 
 def _sanitize_json(value: Any) -> Any:
     try:
         return json.loads(json.dumps(value, default=str))
-    except Exception:
+    except Exception as exc:
+        logging.getLogger(__name__).debug("sanitize_json_failed", exc_info=True)
         return None
 
 
@@ -26,7 +30,8 @@ def _decode_jwt_payload(token: str) -> dict[str, Any] | None:
         decoded = base64.urlsafe_b64decode((payload_segment + padding).encode("utf-8"))
         payload = json.loads(decoded.decode("utf-8"))
         return payload if isinstance(payload, dict) else None
-    except Exception:
+    except Exception as exc:
+        logging.getLogger(__name__).debug("decode_jwt_failed", exc_info=True)
         return None
 
 
@@ -132,7 +137,8 @@ def sign_out(access_token: str | None = None) -> None:
             },
             timeout=10,
         )
-    except Exception:
+    except Exception as exc:
+        logging.getLogger(__name__).exception("sign_out_failed", exc_info=True)
         return
 
 
@@ -270,7 +276,8 @@ def validate_access_token(access_token: str | None) -> tuple[bool, dict[str, str
             "email": user_email,
             "access_token": token,
         }
-    except Exception:
+    except Exception as exc:
+        logging.getLogger(__name__).exception("validate_access_token_failed", exc_info=True)
         return False, None
 
 
@@ -318,12 +325,24 @@ def save_cloud_chat_history(user_id: str, access_token: str | None, dataset_key:
         payload = response.json() if response.content else []
         if isinstance(payload, list) and payload:
             inserted_row = payload[0] if isinstance(payload[0], dict) else {}
+            # Clear cached cloud history so UI shows new row without stale cache
+            try:
+                from modules.cache_utils import safe_clear_cache
+
+                ds_key = str(inserted_row.get("dataset_key", "") or "").strip() or None
+                safe_clear_cache(ds_key)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).debug("supabase_fetch_failed", exc_info=True)
             return True, str(inserted_row.get("id", "") or "") or None
         return True, None
-    except Exception:
+    except Exception as exc:
+        logging.getLogger(__name__).exception("save_cloud_chat_history_failed", exc_info=True)
         return False, None
 
 
+@st.cache_data(show_spinner=False)
 def fetch_cloud_chat_history(
     user_id: str,
     access_token: str | None,
@@ -346,6 +365,7 @@ def fetch_cloud_chat_history(
         params.insert(2, f"dataset_key=eq.{dataset_value}")
 
     try:
+        started = time.perf_counter()
         response = requests.get(
             f"{_supabase_url()}/rest/v1/chat_history?{'&'.join(params)}",
             headers={
@@ -355,11 +375,19 @@ def fetch_cloud_chat_history(
             },
             timeout=15,
         )
+        duration_ms = (time.perf_counter() - started) * 1000
+        try:
+            record_timing("supabase_fetch_chat_history_ms", duration_ms)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("supabase_upsert_failed", exc_info=True)
+
         if response.status_code >= 400:
             return []
         payload = response.json() if response.content else []
         return payload if isinstance(payload, list) else []
-    except Exception:
+    except Exception as exc:
+        logging.getLogger(__name__).exception("fetch_cloud_chat_history_failed", exc_info=True)
         return []
 
 
@@ -379,6 +407,18 @@ def delete_cloud_chat_history(user_id: str, access_token: str | None, row_id: st
             },
             timeout=15,
         )
-        return response.status_code < 300
-    except Exception:
+        ok = response.status_code < 300
+        if ok:
+            try:
+                from modules.cache_utils import safe_clear_cache
+
+                # We don't have the dataset key here; skip global clear to avoid side effects
+                safe_clear_cache(None)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).debug("failed_clearing_cache_after_delete", exc_info=True)
+        return ok
+    except Exception as exc:
+        logging.getLogger(__name__).exception("delete_cloud_chat_history_failed", exc_info=True)
         return False

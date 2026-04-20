@@ -26,7 +26,9 @@ def _build_dataset_context(df: pd.DataFrame, schema: dict, max_rows: int = 8) ->
             numeric_profile_lines.append(
                 f"{col}: min={series.min():,.3f}, max={series.max():,.3f}, mean={series.mean():,.3f}, median={series.median():,.3f}"
             )
-        except Exception:
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("numeric_profile_build_error", exc_info=True)
             continue
 
     categorical_profile_lines: list[str] = []
@@ -43,7 +45,9 @@ def _build_dataset_context(df: pd.DataFrame, schema: dict, max_rows: int = 8) ->
                 continue
             parts = [f"{idx} ({count})" for idx, count in top_values.items()]
             categorical_profile_lines.append(f"{col}: {', '.join(parts)}")
-        except Exception:
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("categorical_profile_build_error", exc_info=True)
             continue
 
     return (
@@ -254,6 +258,141 @@ def _build_structured_response(payload: dict[str, Any]) -> dict[str, list[str]]:
     return {key: value for key, value in structured.items() if value}
 
 
+def _coerce_and_validate_payload(payload: Any, raw_content: str) -> dict[str, Any]:
+    """Ensure payload is a dict with expected keys and sensible types.
+
+    If fields are missing or malformed, coerce them and reduce confidence.
+    """
+    # Preserve the original payload to detect which keys were present
+    original_payload = payload if isinstance(payload, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    # Expected keys with default types
+    keys_defaults = {
+        "intent": "analysis",
+        "query_rejected": False,
+        "needs_clarification": False,
+        "confidence": 0.0,
+        "source_columns": [],
+        "response": "",
+        "summary": [],
+        "follow_ups": [],
+        "rephrases": [],
+        "executive_insight": [],
+        "key_findings": [],
+        "business_impact": [],
+        "recommended_next_steps": [],
+        "limitations": [],
+    }
+
+    result: dict[str, Any] = {}
+    malformed = False
+    for k, default in keys_defaults.items():
+        v = payload.get(k, default)
+        # Basic type normalization
+        if isinstance(default, list):
+            if isinstance(v, (str, dict)):
+                # If model returned a single string, split into lines
+                v = _normalize_text_items(v)
+            elif not isinstance(v, (list, tuple, set)):
+                v = []
+            else:
+                v = [str(x).strip() for x in v if str(x).strip()]
+        elif isinstance(default, bool):
+            v = bool(v)
+        elif isinstance(default, float) or k == "confidence":
+            try:
+                v = float(v)
+            except Exception as exc:
+                v = 0.0
+        else:
+            v = str(v or "").strip()
+
+        result[k] = v
+        # Heuristic: if required fields are empty or wrong type, mark malformed
+        if k == "response" and not result[k]:
+            malformed = True
+
+    # If payload looked malformed, try to extract a fallback response from raw content
+    if malformed:
+        fallback_lines = _fallback_summary_from_response(raw_content, max_items=3)
+        result["response"] = raw_content.strip() or ("\n".join(fallback_lines) if fallback_lines else "")
+        # lower confidence to reflect uncertainty
+        try:
+            # If the original payload did not include a confidence field,
+            # use a conservative default of 0.3; otherwise respect/clamp the provided value.
+            if "confidence" not in original_payload:
+                result["confidence"] = 0.3
+            else:
+                result["confidence"] = min(0.5, float(original_payload.get("confidence", 0.0)))
+        except Exception as exc:
+            result["confidence"] = 0.3
+
+    # Clamp confidence
+    try:
+        result["confidence"] = max(0.0, min(1.0, float(result.get("confidence", 0.0))))
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("clamp_confidence_failed", exc_info=True)
+        result["confidence"] = 0.0
+
+    return result
+
+
+def _augment_structured_response_from_data(df: pd.DataFrame, payload: dict[str, Any]) -> dict[str, list[str]]:
+    """Create a lightweight, deterministic structured response from the dataset.
+
+    This is used when the LLM returns minimal or empty structured fields.
+    The output shape matches `_build_structured_response`.
+    """
+    structured: dict[str, list[str]] = {}
+
+    # Executive insight: year with largest absolute variance sum
+    try:
+        if "variance" in df.columns and "year" in df.columns:
+            by_year = df.groupby("year").variance.apply(lambda s: s.abs().sum())
+            top_year = int(by_year.idxmax())
+            structured.setdefault("EXECUTIVE INSIGHT", []).append(f"Year with largest absolute variance: {top_year}")
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("failed_parsing_user_intent", exc_info=True)
+
+    # Key findings: top 3 departments by absolute variance
+    try:
+        if "department" in df.columns and "variance" in df.columns:
+            by_dept = df.groupby("department").variance.apply(lambda s: s.abs().sum()).sort_values(ascending=False)
+            top_depts = list(by_dept.index[:3])
+            structured.setdefault("KEY FINDINGS", []).append(f"Top departments by absolute variance: {', '.join(top_depts)}")
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("failed_building_prompt", exc_info=True)
+
+    # Business impact: departments with average large variance_pct
+    try:
+        if "department" in df.columns and "variance_pct" in df.columns:
+            dept_avg = df.groupby("department").variance_pct.mean()
+            worst = dept_avg.idxmax()
+            structured.setdefault("BUSINESS IMPACT", []).append(f"{worst} shows the highest average variance percent")
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("failed_extracting_result", exc_info=True)
+
+    # Recommended next steps: simple, actionable items
+    structured.setdefault("RECOMMENDED NEXT STEPS", []).extend(
+        [
+            "Investigate top departments with largest variance.",
+            "Compare budget vs actual by quarter for the top departments.",
+            "Implement monthly variance monitoring and root-cause analysis.",
+        ]
+    )
+
+    # Limitations
+    structured.setdefault("LIMITATIONS", []).append("Derived programmatically — may lack context the LLM could provide.")
+
+    return structured
+
+
 def _clean_list_field(values: Any) -> list[str]:
     if not isinstance(values, list):
         return []
@@ -318,7 +457,9 @@ Return this schema exactly:
 
     try:
         payload = safe_json_loads(llm_result.get("content", "{}"))
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("parse_llm_json_safe_failed", exc_info=True)
         return []
 
     questions = payload.get("questions", []) or []
@@ -385,7 +526,7 @@ def _memory_compare_response(query: str, result_history: list[Any], result_histo
             "insight": "",
             "status": "ok",
         }
-    except Exception:
+    except Exception as exc:
         fallback = (
             "I recognized this as a comparison request, but the last two results cannot "
             f"be compared directly ({prev_meta.get('result_type', 'unknown')} vs {last_meta.get('result_type', 'unknown')})."
@@ -451,7 +592,7 @@ Query: {query}
 Dataset: {dataset_label}
 Context: {dataset_context}
 
-Return JSON with keys:
+Return JSON with keys (use arrays for list fields):
 intent, query_rejected, needs_clarification, confidence, source_columns, executive_insight,
 key_findings, business_impact, recommended_next_steps, limitations, response, summary,
 follow_ups, rephrases
@@ -461,7 +602,8 @@ Rules:
 - Use actual column names only.
 - If unrelated, set query_rejected=true.
 - Keep response under 120 words unless user asks for detail.
-- Include all keys even if empty.
+- Return empty arrays for list fields if no data applies.
+- When the question concerns the dataset, include at least one item in `executive_insight` and `key_findings` when possible; otherwise add a brief note in `limitations` explaining why.
 """.strip()
 
     if logger:
@@ -514,30 +656,34 @@ Rules:
 
     raw_content = llm_result.get("content", "{}")
     try:
-        payload = safe_json_loads(raw_content)
-    except Exception:
-        payload = {
-            "intent": "analysis",
-            "query_rejected": False,
-            "needs_clarification": False,
-            "confidence": 0.3,
-            "source_columns": [],
-            "response": raw_content,
-            "summary": [],
-            "follow_ups": [],
-            "rephrases": [],
-        }
+        parsed = safe_json_loads(raw_content)
+    except Exception as exc:
+        parsed = {}
+
+    payload = _coerce_and_validate_payload(parsed, raw_content)
 
     response_text = str(payload.get("response", "")).strip()
     summary = _clean_summary_items(payload.get("summary", []) or [], response_text)
     follow_ups = payload.get("follow_ups", []) or []
     rephrases = payload.get("rephrases", []) or []
     structured_response = _build_structured_response(payload)
+
+    # If the LLM returned no structured content, augment deterministically using the dataset
+    if not structured_response:
+        try:
+            augmented = _augment_structured_response_from_data(df, payload)
+            # Only set keys that are missing
+            for k, v in augmented.items():
+                if k not in structured_response or not structured_response.get(k):
+                    structured_response[k] = v
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("failed_handling_result_chunk", exc_info=True)
     source_columns = _clean_list_field(payload.get("source_columns", []) or [])
     confidence = payload.get("confidence", 0.0)
     try:
         confidence = max(0.0, min(1.0, float(confidence)))
-    except Exception:
+    except Exception as exc:
         confidence = 0.0
 
     if not response_text and structured_response:

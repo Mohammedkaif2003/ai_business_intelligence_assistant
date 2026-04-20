@@ -50,7 +50,7 @@ def _find_datetime_columns(df: pd.DataFrame) -> list[str]:
                 if parsed.notna().sum() >= max(2, len(df) // 2):
                     df[col] = parsed
                     datetime_cols.append(col)
-            except Exception:
+            except Exception as exc:
                 continue
     return datetime_cols
 

@@ -277,7 +277,7 @@ def _get_ai_try_asking_suggestions(df: pd.DataFrame, schema: dict | None = None,
     
     try:
         questions = generate_try_asking_suggestions(df, schema, st.session_state.get("dataset_name"))
-    except Exception:
+    except Exception as exc:
         questions = []
 
     if not questions:
@@ -376,8 +376,9 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     # This runs once per tab render, fairly harmless since it's cached on disk
     try:
         cleanup_stale_cache(max_cache_entries_per_dataset=100, max_age_seconds=604800)  # 7 days
-    except Exception:
-        pass  # Silently ignore cleanup failures
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("cleanup_stale_cache_failed", exc_info=True)
     
     # Render settings panel in sidebar
     ai_settings = render_settings_panel()
@@ -468,8 +469,9 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         submitted_query = st.session_state.get("auto_query")
         try:
             del st.session_state.auto_query
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("failed_delete_auto_query", exc_info=True)
         if submitted_query:
             st.session_state["selected_chat_history_id"] = ""
             st.session_state["chat_view_mode"] = "new"
@@ -532,7 +534,9 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
             cache_data = _load_cache_data()
             dataset_entry = cache_data.get(dataset_cache_key, {})
             all_dataset_responses = dataset_entry.get("response_cache", {})
-        except Exception:
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("failed_loading_prompt_cache_responses", exc_info=True)
             all_dataset_responses = {}
         
         if all_dataset_responses:
@@ -580,8 +584,9 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         try:
             preview_total = float(pd.to_numeric(df[preview_metric], errors="coerce").fillna(0).sum())
             st.caption(f"Quick preview: total {preview_metric} is approximately {preview_total:,.2f}.")
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("preview_total_calculation_failed", exc_info=True)
     try:
         if outcome is None:
             status_placeholder.info("Reading dataset context...")

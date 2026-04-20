@@ -19,4 +19,10 @@ def activate_dataset(dataset_key: str, dataframe: pd.DataFrame, dataset_fingerpr
     st.session_state["active_dataset_cache_key"] = next_cache_key
     st.session_state["dataset_name"] = dataset_key
     st.session_state["schema"] = analyze_dataset(dataframe)
+    # Mark that a dataset is loaded so UI elements can enable functionality.
+    try:
+        st.session_state["dataset_loaded"] = True
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("dataset_activation_failed", exc_info=True)
     return True

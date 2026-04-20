@@ -3,13 +3,22 @@ import streamlit as st
 from dotenv import load_dotenv
 import pandas as pd
 from modules.app_secrets import get_secret
-from groq import Groq
+from modules.ai_service_new import get_groq_client
 
-load_dotenv(override=True)
+# Load local .env without overriding environment variables set by the shell
+load_dotenv(override=False)
 import re
 from html import unescape
 
 def sanitize_ai_output(text: str) -> str:
+    """Sanitize AI-generated text.
+
+    - Unescape HTML entities
+    - Strip HTML tags
+    - Remove markdown fences
+
+    Returns a plain-text string safe for UI rendering.
+    """
     if not text:
         return ""
 
@@ -19,7 +28,7 @@ def sanitize_ai_output(text: str) -> str:
     # Remove ALL HTML tags
     text = re.sub(r'</?[^>]+>', '', text)
 
-    # Remove weird leftover formatting
+    # Remove leftover formatting like code fences
     text = text.replace("```", "")
 
     return text.strip()
@@ -113,9 +122,17 @@ Name: {result.name}
     return data_summary
 
 
-def generate_conversational_response(query, result, insight="", df=None):
-    """
-    Generate a professional, rigorous AI response using Groq.
+def generate_conversational_response(query: str, result, insight: str = "", df: pd.DataFrame | None = None) -> str:
+    """Generate an executive-style AI response for a dataset query.
+
+    Args:
+        query: The user's natural-language question.
+        result: The result object (DataFrame, Series, str, etc.) produced by analysis code.
+        insight: Optional preliminary insight text to seed the LLM.
+        df: Optional full DataFrame for context/preview.
+
+    Returns:
+        A formatted string containing the AI response in the required sectioned format.
     """
     # 🔹 Build data summary (with optional dataset context)
     data_summary = _build_data_context(result, insight)
@@ -125,8 +142,10 @@ def generate_conversational_response(query, result, insight="", df=None):
         try:
             df_preview = df.head(3).to_string()
             data_summary += f"\n\nFull Dataset Preview:\n{df_preview}"
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).debug("failed_building_df_preview", exc_info=True)
 
     prompt = f"""User question: "{query}"
 
@@ -136,10 +155,9 @@ Analysis evidence:
 Write an executive-quality response using the required section format.
 Be specific to THIS dataset and include quantified statements whenever possible.
 Do not repeat section headers inside bullets."""
-    groq_api_key = get_secret("GROQ_API_KEY")
-    if groq_api_key:
+    client = get_groq_client()
+    if client:
         try:
-            client = Groq(api_key=groq_api_key)
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
@@ -205,10 +223,9 @@ Write a SHORT, professional message (2-3 sentences) that:
 
 Keep it helpful and direct. Under 60 words."""
 
-    groq_api_key = get_secret("GROQ_API_KEY")
-    if groq_api_key:
+    client = get_groq_client()
+    if client:
         try:
-            client = Groq(api_key=groq_api_key)
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],

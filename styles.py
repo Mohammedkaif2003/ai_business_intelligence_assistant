@@ -771,6 +771,19 @@ div[aria-selected="true"][role="option"] > div {
     opacity: 0.95;
 }
 
+/* Home page feature cards styling */
+.home-page .home-card {
+    background: linear-gradient(145deg, rgba(15,23,42,0.75), rgba(2,6,23,0.65)) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    transition: all 0.25s ease !important;
+    border-radius: var(--card-radius) !important;
+}
+
+.home-page .home-card:hover {
+    transform: translateY(-6px) !important;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.35) !important;
+}
+
 .structured-section__header {
     display: flex;
     align-items: center;

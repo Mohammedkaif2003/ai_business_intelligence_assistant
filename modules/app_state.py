@@ -30,7 +30,15 @@ def _is_recent_duplicate(query: str, history_id: str, history_list: list) -> boo
                 pass  # Invalid timestamp, skip
     return False
 
-from modules.prompt_cache import get_cached_dataset_state, save_cached_dataset_state, get_all_cached_dataset_states
+from modules.prompt_cache import (
+    get_cached_dataset_state,
+    save_cached_dataset_state,
+    get_all_cached_dataset_states,
+)
+from modules.deleted_history import (
+    add_global_deleted_history_id,
+    get_global_deleted_history_ids,
+)
 from modules.supabase_service import fetch_cloud_chat_history, save_cloud_chat_history, delete_cloud_chat_history
 
 
@@ -102,7 +110,13 @@ def open_chat_history(history_id: str) -> None:
             user_id = str(st.session_state.get("supabase_user_id", "") or "").strip()
             access_token = str(st.session_state.get("supabase_access_token", "") or "").strip()
             if user_id and access_token:
-                rows = fetch_cloud_chat_history(user_id, access_token, dataset_key=None, limit=500)
+                try:
+                    with st.spinner("Loading saved chat..."):
+                        rows = fetch_cloud_chat_history(user_id, access_token, dataset_key=None, limit=500)
+                except Exception as exc:
+                    get_logger("app_state").debug("fetch_cloud_chat_history_failed", exc_info=True)
+                    rows = []
+
                 if isinstance(rows, list):
                     for row in rows:
                         row_id = str(row.get("id", "") or "").strip()
@@ -172,6 +186,196 @@ def _matches_entry_id(entry: dict, hid: str) -> bool:
         return True
 
     return False
+
+
+def _resolve_cloud_id_for(hid: str) -> str | None:
+    """Return a cloud row id for a given history identifier if available.
+
+    This inspects in-memory chat history and any cached dataset states
+    to find an associated `cloud_history_id` so cloud deletions can be
+    targeted correctly even when the UI passes a signature/local id.
+    """
+    hid = str(hid or "").strip()
+    if not hid:
+        return None
+
+    # Check in-memory session history
+    for entry in list(st.session_state.get("chat_history", []) or []):
+        try:
+            if _matches_entry_id(entry if isinstance(entry, dict) else {}, hid):
+                cloud_id = str((entry or {}).get("cloud_history_id", "") or "").strip()
+                if cloud_id:
+                    return cloud_id
+        except Exception as exc:
+            get_logger("app_state").debug("resolve_cloud_id_in_memory_entry_error", exc_info=True)
+            continue
+
+    # Check persisted cached dataset states
+    try:
+        cached_states = get_all_cached_dataset_states()
+        if isinstance(cached_states, dict):
+            for ds_state in cached_states.values():
+                if not isinstance(ds_state, dict):
+                    continue
+                entries = ds_state.get("chat_history", [])
+                if not isinstance(entries, list):
+                    continue
+                for entry in entries:
+                    try:
+                        if _matches_entry_id(entry if isinstance(entry, dict) else {}, hid):
+                            cloud_id = str((entry or {}).get("cloud_history_id", "") or "").strip()
+                            if cloud_id:
+                                return cloud_id
+                    except Exception as exc:
+                        get_logger("app_state").debug("resolve_cloud_id_cached_entry_error", exc_info=True)
+                        continue
+    except Exception as exc:
+        get_logger("app_state").debug("resolve_cloud_id_error", exc_info=True)
+
+    return None
+
+
+def _find_cloud_row_id_for(hid: str, user_id: str, access_token: str) -> str | None:
+    """Fetch cloud chat history for the user and return a matching cloud row id.
+
+    This is a best-effort lookup that normalizes cloud rows to the
+    local chat entry shape and uses `_matches_entry_id` to find the
+    corresponding cloud row. Returns the cloud `id` string when found.
+    """
+    hid = str(hid or "").strip()
+    if not hid or not user_id or not access_token:
+        return None
+
+    try:
+        try:
+            with st.spinner("Looking up cloud chat rows..."):
+                rows = fetch_cloud_chat_history(user_id, access_token, dataset_key=None, limit=500)
+        except Exception as exc:
+            get_logger("app_state").debug("find_cloud_row_fetch_failed", exc_info=True)
+            rows = []
+        # Fetch cloud rows and attempt to match; minimal logging only on error.
+        for row in rows:
+            try:
+                entry = _cloud_row_to_chat_entry(row)
+                if _matches_entry_id(entry, hid):
+                    rid = str(row.get("id", "") or "").strip()
+                    if rid:
+                        pass
+                        return rid
+            except Exception as exc:
+                get_logger("app_state").debug("resolve_cloud_id_cloud_row_error", exc_info=True)
+                continue
+    except Exception as exc:
+        logger = get_logger("app_state")
+        logger.exception("cloud_fetch_error", extra={"history_id": hid})
+
+    return None
+
+
+def _find_cloud_row_entry_for(hid: str, user_id: str, access_token: str) -> tuple[str | None, dict | None]:
+    """Return a tuple of (cloud_row_id, normalized_entry) for a matching cloud row.
+
+    Normalized entry uses `_cloud_row_to_chat_entry` so callers can inspect
+    `query`, `created_at`, and `dataset_key` for cache cleanup.
+    """
+    hid = str(hid or "").strip()
+    if not hid or not user_id or not access_token:
+        return None, None
+
+    try:
+        try:
+            with st.spinner("Looking up cloud chat rows..."):
+                rows = fetch_cloud_chat_history(user_id, access_token, dataset_key=None, limit=500)
+        except Exception as exc:
+            get_logger("app_state").debug("find_cloud_row_entry_fetch_failed", exc_info=True)
+            rows = []
+        for row in rows:
+            try:
+                entry = _cloud_row_to_chat_entry(row)
+                if _matches_entry_id(entry, hid):
+                    rid = str(row.get("id", "") or "").strip()
+                    pass
+                    return (rid or None, entry)
+            except Exception as exc:
+                get_logger("app_state").debug("find_cloud_row_entry_error", exc_info=True)
+                continue
+    except Exception as exc:
+        logger = get_logger("app_state")
+        logger.exception("cloud_fetch_error_for_entry", extra={"history_id": hid})
+
+    return None, None
+
+
+def _remove_cached_entries_by_query_or_signature(hid: str, user_id: str | None = None, access_token: str | None = None) -> bool:
+    """Remove cached dataset entries that match the given history id by id, signature, or query text.
+
+    Returns True if any cached dataset state was modified.
+    """
+    hid = str(hid or "").strip()
+    if not hid:
+        return False
+
+    # Try to find a cloud entry to get its query text for looser matching
+    cloud_query = None
+    try:
+        if user_id and access_token:
+            _, cloud_entry = _find_cloud_row_entry_for(hid, user_id, access_token)
+            if isinstance(cloud_entry, dict):
+                cloud_query = str(cloud_entry.get("query", "") or "").strip()
+    except Exception as exc:
+        get_logger("app_state").debug("find_cloud_row_entry_cloud_query_failed", exc_info=True)
+        cloud_query = None
+
+    modified_any = False
+    try:
+        cached_states = get_all_cached_dataset_states()
+        if not isinstance(cached_states, dict):
+            return False
+
+        for ds_key, ds_state in list(cached_states.items()):
+            if not isinstance(ds_state, dict):
+                continue
+            entries = ds_state.get("chat_history", [])
+            if not isinstance(entries, list) or not entries:
+                continue
+
+            kept = []
+            removed_here = False
+            for entry in entries:
+                entry_dict = entry if isinstance(entry, dict) else {}
+                # Remove if ids/signature match
+                try:
+                    if _matches_entry_id(entry_dict, hid):
+                        removed_here = True
+                        continue
+                except Exception as exc:
+                    get_logger("app_state").debug("matches_entry_id_check_failed", extra={"hid": hid}, exc_info=True)
+
+                # Fallback: remove if query text matches cloud query (loose match)
+                try:
+                    if cloud_query:
+                        if str(entry_dict.get("query", "") or "").strip() == cloud_query:
+                            removed_here = True
+                            continue
+                except Exception as exc:
+                    get_logger("app_state").debug("cloud_query_match_failed", extra={"hid": hid}, exc_info=True)
+
+                kept.append(entry_dict)
+
+            if removed_here:
+                updated_state = dict(ds_state)
+                updated_state["chat_history"] = _ensure_chat_history_ids(kept)
+                try:
+                    save_cached_dataset_state(ds_key, updated_state)
+                    modified_any = True
+                except Exception as exc:
+                    # non-fatal; continue
+                    get_logger("app_state").debug("save_cached_dataset_state_failed", extra={"dataset_key": ds_key}, exc_info=True)
+    except Exception as exc:
+        get_logger("app_state").debug("remove_cached_entries_failed", exc_info=True)
+        return False
+
+    return modified_any
 
 
 def restore_persisted_analysis_state() -> None:
@@ -246,7 +450,25 @@ def get_sidebar_history_entries(scope: str = "dataset", limit: int = 200) -> lis
     if not user_id or not access_token:
         return current_history
 
-    rows = fetch_cloud_chat_history(user_id, access_token, dataset_key=None, limit=limit)
+    try:
+        # Some test helpers or minimal `st` dummies may not implement `spinner`.
+        # Prefer using it when available, otherwise call directly.
+        if hasattr(st, "spinner") and callable(getattr(st, "spinner")):
+            try:
+                with st.spinner("Loading cloud chat history..."):
+                    rows = fetch_cloud_chat_history(user_id, access_token, dataset_key=None, limit=limit)
+            except Exception as exc:
+                get_logger("app_state").debug("fetch_cloud_chat_history_spinner_failed", exc_info=True)
+                rows = []
+        else:
+            try:
+                rows = fetch_cloud_chat_history(user_id, access_token, dataset_key=None, limit=limit)
+            except Exception as exc:
+                get_logger("app_state").debug("fetch_cloud_chat_history_direct_failed", exc_info=True)
+                rows = []
+    except Exception as exc:
+        get_logger("app_state").debug("fetch_cloud_chat_history_outer_failed", exc_info=True)
+        rows = []
     # If cloud is unavailable or returned no rows, still attempt to include locally cached histories from disk.
     cloud_entries = _ensure_chat_history_ids([_cloud_row_to_chat_entry(row) for row in rows]) if rows else []
 
@@ -287,8 +509,14 @@ def get_sidebar_history_entries(scope: str = "dataset", limit: int = 200) -> lis
     merged_entries: list[dict] = []
     seen_keys: set[str] = set()
 
+    # Exclude any globally-marked deleted ids persisted on disk.
+    deleted_ids_global = {str(i).strip() for i in get_global_deleted_history_ids()}
+
     def _add_if_new(entry: dict) -> None:
         identity_keys = _entry_identity_keys(entry)
+        # Skip entries that match a globally deleted id
+        if identity_keys and any(k.split("::", 1)[1] in deleted_ids_global for k in identity_keys):
+            return
         if identity_keys and any(key in seen_keys for key in identity_keys):
             return
         merged_entries.append(entry)
@@ -336,10 +564,14 @@ def restore_cloud_analysis_state() -> bool:
     for entry in deduped_cloud:
         query = str(entry.get("query", "") or "").strip()
         answer = str(entry.get("ai_response", "") or entry.get("insight", "") or "").strip()
+        # Deduplicate using recent messages window to avoid repeats
+        recent_msgs = st.session_state.get("messages", [])[-20:]
         if query:
-            st.session_state["messages"].append({"role": "user", "content": query})
+            if not any(m.get("role") == "user" and str(m.get("content", "")).strip() == query for m in recent_msgs):
+                st.session_state["messages"].append({"role": "user", "content": query})
         if answer:
-            st.session_state["messages"].append({"role": "assistant", "content": answer})
+            if not any(m.get("role") == "assistant" and str(m.get("content", "")).strip() == answer for m in recent_msgs):
+                st.session_state["messages"].append({"role": "assistant", "content": answer})
 
         if not st.session_state.get("analysis_history"):
             st.session_state["analysis_history"] = []
@@ -451,7 +683,8 @@ def delete_chat_history_everywhere(history_id: str) -> bool:
     # Remove from in-memory session state
     try:
         removed_any = delete_chat_history_entry(hid) or removed_any
-    except Exception:
+    except Exception as exc:
+        get_logger("app_state").debug("delete_chat_history_entry_failed", extra={"history_id": hid}, exc_info=True)
         removed_any = removed_any
 
     # Remove from persisted cached dataset states
@@ -478,9 +711,9 @@ def delete_chat_history_everywhere(history_id: str) -> bool:
                 updated_state["chat_history"] = _ensure_chat_history_ids(kept)
                 try:
                     save_cached_dataset_state(dataset_cache_key, updated_state)
-                except Exception:
-                    # non-fatal; continue
-                    pass
+                except Exception as exc:
+                    # non-fatal; continue but log for diagnostics
+                    get_logger("app_state").debug("save_cached_dataset_state_failed", extra={"dataset_key": dataset_cache_key}, exc_info=True)
                 removed_any = True
 
     return removed_any
@@ -505,9 +738,47 @@ def delete_history_immediate(history_id: str) -> bool:
     if user_id and access_token:
         try:
             logger.info("attempt_cloud_delete", extra={"history_id": hid, "user_id": user_id})
-            cloud_deleted = delete_cloud_chat_history(user_id, access_token, hid)
-            logger.info("cloud_delete_attempted", extra={"history_id": hid, "cloud_deleted": bool(cloud_deleted)})
-        except Exception:
+            # Try to resolve a true cloud row id for this history identifier.
+            cloud_target = _resolve_cloud_id_for(hid)
+            # Fall back to the provided id if no mapping found (keeps backward compatibility).
+            cloud_target = str(cloud_target or hid).strip()
+            if cloud_target:
+                cloud_deleted = delete_cloud_chat_history(user_id, access_token, cloud_target)
+
+            # If cloud delete failed, attempt a best-effort lookup of the
+            # real cloud row id by fetching cloud rows and deleting that id.
+            if not cloud_deleted:
+                try:
+                    lookup_id = _find_cloud_row_id_for(hid, user_id, access_token)
+                    if lookup_id and lookup_id != cloud_target:
+                        cloud_deleted = delete_cloud_chat_history(user_id, access_token, lookup_id)
+                        logger.info("cloud_delete_lookup_attempt", extra={"history_id": hid, "lookup_id": lookup_id, "cloud_deleted": bool(cloud_deleted)})
+                except Exception as exc:
+                    logger.exception("cloud_lookup_delete_failed", extra={"history_id": hid})
+
+            logger.info("cloud_delete_attempted", extra={"history_id": hid, "cloud_target": cloud_target, "cloud_deleted": bool(cloud_deleted)})
+
+            # If we deleted in cloud, also persist this id to the global
+            # deleted list (on disk) and attempt to remove any cached
+            # dataset entries that may be present so the deletion persists.
+            try:
+                if cloud_deleted:
+                    # Persist both the provided id and any resolved cloud id
+                    try:
+                        add_global_deleted_history_id(hid)
+                    except Exception as exc:
+                        get_logger("app_state").debug("add_global_deleted_history_id_failed", extra={"history_id": hid}, exc_info=True)
+                    try:
+                        # cloud_target may be a resolved cloud row id
+                        if cloud_target and str(cloud_target).strip() and cloud_target != hid:
+                            add_global_deleted_history_id(str(cloud_target).strip())
+                    except Exception as exc:
+                        get_logger("app_state").debug("add_global_deleted_cloud_id_failed", extra={"history_id": hid, "cloud_target": cloud_target}, exc_info=True)
+                    cleaned = _remove_cached_entries_by_query_or_signature(hid, user_id, access_token)
+                    logger.info("cached_state_cleanup", extra={"history_id": hid, "cleaned": bool(cleaned)})
+            except Exception as exc:
+                logger.exception("cached_cleanup_failed", extra={"history_id": hid})
+        except Exception as exc:
             logger.exception("cloud_delete_error", extra={"history_id": hid})
 
     local_deleted = delete_chat_history_everywhere(hid)
@@ -523,10 +794,73 @@ def delete_history_immediate(history_id: str) -> bool:
         selected = str(st.session_state.get("selected_chat_history_id", "") or "").strip()
         if selected and _matches_entry_id({"history_id": selected, "cloud_history_id": selected}, hid):
             st.session_state["selected_chat_history_id"] = ""
-    except Exception:
+    except Exception as exc:
         logger.exception("clear_delete_state_failed", extra={"history_id": hid})
 
+    # Invalidate cache after any deletion so cached cloud fetches refresh
+    try:
+        if cloud_deleted or local_deleted:
+            try:
+                from modules.cache_utils import safe_clear_cache
+
+                # Attempt to clear only dataset-specific cache when possible
+                dataset_key = str(st.session_state.get("active_dataset_cache_key") or "").strip() or None
+                safe_clear_cache(dataset_key)
+            except Exception as exc:
+                get_logger("app_state").debug("failed_clearing_cache", exc_info=True)
+    except Exception as exc:
+        # ignore cache clear failures
+        get_logger("app_state").debug("cache_clear_outer_failed", exc_info=True)
+
     return bool(cloud_deleted or local_deleted)
+
+
+def delete_history_cloud_only(hid: str, user_id: str, access_token: str) -> bool:
+    """Attempt cloud-only deletion and cached-state cleanup without
+    mutating `st.session_state`. Safe to call from background threads.
+    """
+    hid = str(hid or "").strip()
+    user_id = str(user_id or "").strip()
+    access_token = str(access_token or "").strip()
+    if not hid or not user_id or not access_token:
+        return False
+
+    cloud_deleted = False
+    try:
+        # Try to find a matching cloud row id and delete it
+        try:
+            target = _find_cloud_row_id_for(hid, user_id, access_token) or hid
+        except Exception as exc:
+            get_logger("app_state").debug("find_cloud_row_id_lookup_failed", extra={"history_id": hid}, exc_info=True)
+            target = hid
+
+        if target:
+            try:
+                cloud_deleted = delete_cloud_chat_history(user_id, access_token, target)
+            except Exception as exc:
+                get_logger("app_state").debug("delete_cloud_chat_history_failed", extra={"target": target}, exc_info=True)
+                cloud_deleted = False
+
+        # If deleted, persist global deleted id and clean cached dataset states
+        if cloud_deleted:
+            try:
+                add_global_deleted_history_id(hid)
+            except Exception as exc:
+                get_logger("app_state").debug("failed_ensuring_ids", extra={"ds_key": ds_key}, exc_info=True)
+            try:
+                if target and str(target).strip() and target != hid:
+                    add_global_deleted_history_id(str(target).strip())
+            except Exception as exc:
+                get_logger("app_state").debug("failed_saving_global_deleted_ids", exc_info=True)
+            try:
+                _remove_cached_entries_by_query_or_signature(hid, user_id, access_token)
+            except Exception as exc:
+                get_logger("app_state").debug("failed_loading_cached_states", exc_info=True)
+    except Exception as exc:
+        get_logger("app_state").debug("delete_history_cloud_only_failed", exc_info=True)
+        return False
+
+    return bool(cloud_deleted)
 
 
 def persist_dataset_state() -> None:
@@ -565,15 +899,31 @@ def get_recent_activity():
 
 
 def append_message_pair(query: str, result):
-    st.session_state["messages"].append({"role": "user", "content": query})
+    # Avoid duplicating messages: if UI already appended the user message or assistant
+    # placeholder, do not append identical entries again. This keeps `messages` in
+    # sync across immediate UI updates and persisted saves.
+    st.session_state.setdefault("messages", [])
+    msgs = st.session_state["messages"]
+    # Append user message only if the last user message doesn't match this query
+    if not (msgs and msgs[-1].get("role") == "user" and str(msgs[-1].get("content", "")).strip() == str(query).strip()):
+        msgs.append({"role": "user", "content": query})
+
+    # Build assistant preview content
+    assistant_preview = None
     if isinstance(result, pd.DataFrame):
         preview = result.head(5).to_string(index=False)
-        st.session_state["messages"].append({"role": "assistant", "content": f"Here are the top results:\n\n{preview}"})
+        assistant_preview = f"Here are the top results:\n\n{preview}"
     elif isinstance(result, pd.Series):
         preview = result.head(5).to_string()
-        st.session_state["messages"].append({"role": "assistant", "content": f"Here are the top results:\n\n{preview}"})
+        assistant_preview = f"Here are the top results:\n\n{preview}"
     else:
-        st.session_state["messages"].append({"role": "assistant", "content": str(result)})
+        assistant_preview = str(result)
+
+    # Append assistant preview only if the most recent assistant message differs
+    if assistant_preview is not None:
+        if not (msgs and msgs[-1].get("role") == "assistant" and str(msgs[-1].get("content", "")).strip() == str(assistant_preview).strip()):
+            msgs.append({"role": "assistant", "content": assistant_preview})
+    st.session_state["messages"] = msgs
 
 
 def store_analysis_outputs(query, result, chart_data, chart_figs, code, report_insight, ai_response, summary_list, suggestions, query_rejected, is_axes_result):
@@ -636,8 +986,8 @@ def store_analysis_outputs(query, result, chart_data, chart_figs, code, report_i
             logger.info("store_analysis_cloud_save", extra={"user_id": user_id, "ok": bool(ok), "cloud_history_id": cloud_history_id})
             if ok and cloud_history_id:
                 latest_entry["cloud_history_id"] = cloud_history_id
-    except Exception:
-        get_logger("app_state").exception("store_analysis_cloud_save_failed")
+    except Exception as exc:
+        get_logger("app_state").exception("store_analysis_cloud_save_failed", exc_info=True)
 
     # Also remove this entry from any persisted cached dataset states to
     # ensure deletion is permanent across reloads/logins.
@@ -664,12 +1014,12 @@ def store_analysis_outputs(query, result, chart_data, chart_figs, code, report_i
                     new_state["chat_history"] = _ensure_chat_history_ids(kept)
                     try:
                         save_cached_dataset_state(ds_key, new_state)
-                    except Exception:
-                        # non-fatal
-                        pass
-    except Exception:
+                    except Exception as exc:
+                        # non-fatal; log for diagnostics
+                        get_logger("app_state").debug("save_cached_dataset_state_failed_in_store", extra={"ds_key": ds_key}, exc_info=True)
+    except Exception as exc:
         # Don't let cleanup errors break the main flow
-        pass
+        get_logger("app_state").debug("store_analysis_cleanup_failed", exc_info=True)
 
 
 def persist_analysis_cycle(
@@ -779,7 +1129,7 @@ def persist_analysis_cycle(
             logger.info("persist_analysis_cycle_cloud_save", extra={"user_id": user_id, "ok": bool(ok), "cloud_history_id": cloud_history_id})
             if ok and cloud_history_id:
                 latest_entry["cloud_history_id"] = cloud_history_id
-        except Exception:
-            get_logger("app_state").exception("persist_analysis_cycle_cloud_save_failed")
+        except Exception as exc:
+            get_logger("app_state").exception("persist_analysis_cycle_cloud_save_failed", exc_info=True)
 
     persist_dataset_state()

@@ -4,7 +4,14 @@ import re
 import streamlit as st
 from config import FRIENDLY_DATASET_NAMES
 
-from modules.app_state import open_chat_history, start_new_chat, delete_chat_history_entry, delete_history_immediate
+from modules.app_state import (
+    open_chat_history,
+    start_new_chat,
+    delete_chat_history_entry,
+    delete_history_immediate,
+    delete_history_cloud_only,
+)
+import threading
 from modules.app_secrets import get_secret
 from utils.logging import get_logger
 
@@ -132,38 +139,94 @@ def render_chat_history_sidebar(
             elif hasattr(st, "experimental_rerun"):
                 st.experimental_rerun()
         except AttributeError:
-            pass  # Streamlit version lacks API
+            logger.debug("streamlit_rerun_not_supported", exc_info=True)
         try:
             if hasattr(st, "stop"):
                 st.stop()
         except AttributeError:
-            pass  # Expected for older Streamlit
+            logger.debug("streamlit_stop_not_supported", exc_info=True)
 
-    # Handle any pending delete action before rendering the list. This
-    # ensures the UI uses the latest state and avoids double-click issues.
+    # Handle any pending delete action before rendering the list. Perform
+    # an optimistic local delete to update UI immediately, then perform
+    # cloud deletion and cache cleanup in a background thread to avoid
+    # blocking the UI.
     try:
         delete_id = str(st.session_state.get("delete_chat_history_id", "") or "").strip()
         if delete_id:
-            removed = False
+            # Immediate local deletion so UI responds quickly
             try:
-                removed = delete_history_immediate(delete_id)
-            except (ValueError, KeyError):
-                logger.warning("Delete history immediate failed", extra={"delete_id": delete_id})
-                removed = False
+                delete_chat_history_entry(delete_id)
+            except Exception as exc:
+                logger.warning("Local delete failed", extra={"delete_id": delete_id}, exc_info=True)
 
-            if removed:
+            # Mark as deleted for UI hiding
+            try:
                 st.session_state["deleted_history_ids"] = list(st.session_state.get("deleted_history_ids", [])) + [delete_id]
+            except Exception as exc:
+                logger.debug("failed_to_update_deleted_history_ids", extra={"delete_id": delete_id}, exc_info=True)
 
-            # Clear pending id and force rerun/stop so UI reflects deletion immediately.
+            # Clear pending id so we don't loop
             st.session_state["delete_chat_history_id"] = ""
+
+            # Snapshot credentials for background cloud delete
+            user_id = str(st.session_state.get("supabase_user_id", "") or "").strip()
+            access_token = str(st.session_state.get("supabase_access_token", "") or "").strip()
+
+            def _bg_delete(hid, uid, token):
+                try:
+                    if uid and token:
+                        try:
+                            delete_history_cloud_only(hid, uid, token)
+                        except Exception as exc:
+                            logger.exception("background_cloud_delete_failed", extra={"history_id": hid}, exc_info=True)
+                except Exception as exc:
+                    logger.debug("bg_delete_unexpected_error", extra={"history_id": hid}, exc_info=True)
+
+            try:
+                t = threading.Thread(target=_bg_delete, args=(delete_id, user_id, access_token), daemon=True)
+                t.start()
+            except Exception as exc:
+                # If thread spawning fails, fall back to immediate cloud delete
+                try:
+                    delete_history_immediate(delete_id)
+                except Exception as exc:
+                    logger.exception("fallback_delete_failed", extra={"history_id": delete_id}, exc_info=True)
+
+            # Stop here so the UI can re-render without waiting for cloud work
             _rerun_and_stop()
     except Exception as e:
         logger.warning(f"History sidebar render error: {e}", exc_info=True)
         # Non-fatal: continue rendering if delete handling fails.
 
     new_chat_label = "+ New chat"
-    if st.sidebar.button(new_chat_label, key="new_chat_btn", width="stretch", disabled=not dataset_loaded):
-        start_new_chat()
+    # Show the New Chat button only when a dataset is loaded. Use a callback
+    # to update session state and start a chat without performing extra logic
+    # inline which can cause flicker.
+    def _new_chat_cb():
+        try:
+            st.session_state["current_chat_id"] = None
+        except Exception as exc:
+            logger.debug("failed_set_current_chat_id", exc_info=True)
+        try:
+            start_new_chat()
+        except Exception as exc:
+            logger.exception("start_new_chat_failed", exc_info=True)
+            st.session_state["selected_chat_history_id"] = ""
+            st.session_state["chat_view_mode"] = "new"
+        try:
+            if str(st.session_state.get("active_tab", "")).lower() != "ai_analyst":
+                st.session_state["active_tab"] = "ai_analyst"
+                st.session_state["active_page"] = "chat"
+                st.session_state["navigation_target_page"] = "chat"
+                try:
+                    from modules.prompt_cache import save_global_state_value
+
+                    save_global_state_value("last_active_tab", st.session_state.get("active_tab"))
+                except Exception as exc:
+                    logger.debug("failed_save_last_active_tab", exc_info=True)
+        except Exception as exc:
+            logger.debug("failed_set_active_tab_navigation", exc_info=True)
+    # We will render the New Chat button later only when dataset is loaded.
 
     history_scope = "This Dataset"
     if all_dataset_entries is not None:
@@ -178,6 +241,11 @@ def render_chat_history_sidebar(
     if not scope_entries:
         empty_message = "No saved chats for this dataset yet." if history_scope == "This Dataset" else "No saved chats across datasets yet."
         st.sidebar.caption(empty_message)
+        return
+
+    # If no dataset is loaded, disable history interactions and show a hint.
+    if not dataset_loaded:
+        st.sidebar.caption("Load a dataset to enable saved chat history and start new chats.")
         return
 
     search_text = st.sidebar.text_input("Search chats", key="chat_history_search", placeholder="Search by question...")
@@ -197,6 +265,43 @@ def render_chat_history_sidebar(
         return
 
     current_group = None
+
+    # Selection and delete callbacks to avoid heavy inline execution.
+    def _handle_select(hid: str):
+        try:
+            open_chat_history(hid)
+        except Exception as exc:
+            logger.exception("open_chat_history_failed", extra={"history_id": hid}, exc_info=True)
+            st.session_state["selected_chat_history_id"] = hid
+            try:
+                if hasattr(st, "rerun"):
+                    st.rerun()
+            except Exception as exc:
+                logger.debug("st.rerun_not_available_after_open", exc_info=True)
+        try:
+            st.session_state["current_chat_id"] = hid
+        except Exception as exc:
+            logger.debug("failed_set_current_chat_id_on_select", extra={"history_id": hid}, exc_info=True)
+        try:
+            if str(st.session_state.get("active_tab", "")).lower() != "ai_analyst":
+                st.session_state["active_tab"] = "ai_analyst"
+                st.session_state["active_page"] = "chat"
+                st.session_state["navigation_target_page"] = "chat"
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("failed_fetch_cloud_rows", exc_info=True)
+
+    def _handle_delete(hid: str):
+        st.session_state["delete_chat_history_id"] = hid
+        try:
+            if hasattr(st, "rerun"):
+                st.rerun()
+        except Exception as exc:
+            try:
+                if hasattr(st, "experimental_rerun"):
+                    st.experimental_rerun()
+            except Exception as exc:
+                logger.debug("experimental_rerun_not_available", exc_info=True)
 
     for index, entry in enumerate(ordered_entries, start=1):
         # Compute a stable identity for the entry. Prefer `cloud_history_id`,
@@ -231,31 +336,25 @@ def render_chat_history_sidebar(
         cols = st.sidebar.columns([0.82, 0.18])
         with cols[0]:
             button_label = f"> {title}" if is_selected else title
-            if st.button(
+            st.button(
                 button_label,
                 key=f"history_select_{history_id}",
                 width="stretch",
                 disabled=is_cross_dataset,
                 help="Switch to this dataset to open this chat." if is_cross_dataset else None,
-            ):
-                logger.info("sidebar_open_chat_clicked", extra={"history_id": history_id, "index": index, "is_cross_dataset": bool(is_cross_dataset)})
-                # Set selected id and force rerun so UI updates immediately.
-                st.session_state["selected_chat_history_id"] = history_id
-                _rerun_and_stop()
+                on_click=_handle_select,
+                args=(history_id,),
+            )
         with cols[1]:
-            if st.button(
-                "Del",
+            st.button(
+                "🗑️",
                 key=f"history_delete_{history_id}",
                 help="Delete this chat" if not is_cross_dataset else "Switch to this dataset to delete this chat.",
                 width="stretch",
                 disabled=is_cross_dataset,
-            ):
-                logger.info("sidebar_delete_clicked", extra={"history_id": history_id, "index": index, "is_cross_dataset": bool(is_cross_dataset)})
-                # Defer deletion handling to top-level: mark pending id and
-                # force a rerun/stop so the deletion is processed before
-                # the UI is re-rendered.
-                st.session_state["delete_chat_history_id"] = history_id
-                _rerun_and_stop()
+                on_click=_handle_delete,
+                args=(history_id,),
+            )
 
     # Optional debug panel: enabled when DEBUG_HISTORY is set in .env or
     # when `st.session_state["DEBUG_HISTORY"] = True` (useful to diagnose clicks).

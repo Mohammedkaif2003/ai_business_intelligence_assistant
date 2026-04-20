@@ -239,7 +239,7 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
                     key=f"{download_key}_png",
                     width="stretch",
                 )
-            except Exception:
+            except Exception as exc:
                 st.caption("PNG export is unavailable in this environment.")
 
     suggestion_items = build_graph_follow_up_suggestions(payload)

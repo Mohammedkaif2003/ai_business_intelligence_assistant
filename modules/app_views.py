@@ -138,7 +138,7 @@ def render_dict_result(result: dict, key_prefix: str):
             fig = px.bar(df_result, x=df_result.columns[0], y=df_result.columns[1], title=str(key))
             render_chart_card(fig, st)
             has_displayable = True
-        except Exception:
+        except Exception as exc:
             continue
     st.markdown("</div>", unsafe_allow_html=True)
     return has_displayable
