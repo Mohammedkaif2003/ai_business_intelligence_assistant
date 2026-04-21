@@ -97,6 +97,7 @@ def persist_analysis_cycle(
     intent: str | None,
     rephrases: list,
     result_history_entry: dict,
+    inline_charts: list | None = None,
 ):
     st.session_state["messages"].append({"role": "user", "content": query})
     if isinstance(result, pd.DataFrame):
@@ -152,6 +153,7 @@ def persist_analysis_cycle(
             "insight": insight if not query_rejected else "",
             "summary": summary_list if not query_rejected else [],
             "charts": chart_figs if not query_rejected else [],
+            "inline_charts": inline_charts if (not query_rejected and inline_charts) else [],
             "ai_response": ai_response,
             "suggestions": suggestions if (not query_rejected and suggestions) else "",
             "query_rejected": query_rejected,

@@ -149,12 +149,11 @@ def render_dict_result(result: dict, key_prefix: str):
 
 def render_follow_up_buttons(raw_suggestions: str, key_prefix: str):
     parsed_questions = extract_follow_up_questions(raw_suggestions)
-    for q in parsed_questions:
+    for idx, q in enumerate(parsed_questions):
         clean_q = clean_text(q).replace("`", "")
-        if st.button(clean_q, key=f"{key_prefix}_{clean_q}", use_container_width=True):
+        if st.button(clean_q, key=f"{key_prefix}_fq_{idx}", use_container_width=True):
             st.session_state.auto_query = clean_q
-            # No st.rerun() — the button click already triggers a rerun and
-            # auto_query will be picked up in the same pass, keeping the user on this tab.
+            st.rerun()
     if not parsed_questions:
         st.caption("No follow-up questions available.")
 
@@ -167,7 +166,14 @@ def render_follow_up_section(raw_suggestions: str, key_prefix: str):
         render_follow_up_buttons(raw_suggestions, key_prefix)
 
 
-def render_chat_history_entry(entry: dict):
+def render_chat_history_entry(entry: dict, entry_index: int = 0):
+    """Render a single chat history entry.
+
+    ``entry_index`` must be a stable integer (e.g. the list position inside
+    ``st.session_state.chat_history``) so that Streamlit widget keys remain
+    constant across reruns and charts / buttons do not disappear.
+    """
+    stable_key = f"h{entry_index}"
     render_user_bubble(entry["query"])
 
     if entry.get("query_rejected"):
@@ -187,16 +193,21 @@ def render_chat_history_entry(entry: dict):
 
     chart_data = entry.get("chart_data")
     if chart_data is not None:
-        render_dataframe_result(chart_data, f"history_table_{id(entry)}")
-        render_chart_collection(entry.get("charts", []), key_prefix=f"hist_{id(entry)}")
+        render_dataframe_result(chart_data, f"history_table_{stable_key}")
+        render_chart_collection(entry.get("charts", []), key_prefix=f"hist_{stable_key}")
     else:
         result = entry.get("result")
         if isinstance(result, dict):
-            render_dict_result(result, f"history_dict_{id(entry)}")
+            render_dict_result(result, f"history_dict_{stable_key}")
         elif not entry.get("ai_response") and str(result) != "None":
             st.markdown('<div class="glass-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
             st.write(str(result))
             st.markdown("</div>", unsafe_allow_html=True)
+
+    # Re-render inline charts stored alongside the message
+    inline_charts = entry.get("inline_charts", [])
+    if inline_charts:
+        render_chart_collection(inline_charts, key_prefix=f"inline_hist_{stable_key}")
 
     insight = entry.get("insight", "")
     if insight:
@@ -209,11 +220,11 @@ def render_chat_history_entry(entry: dict):
                 st.write("-", line)
 
     if entry.get("suggestions"):
-        render_follow_up_section(entry["suggestions"], f"suggest_{id(entry)}")
+        render_follow_up_section(entry["suggestions"], f"suggest_{stable_key}")
 
     if entry.get("rephrases"):
         st.markdown("**Suggested Rephrases**")
         for idx, suggestion in enumerate(entry["rephrases"]):
-            if st.button(suggestion, key=f"history_rephrase_{id(entry)}_{idx}", use_container_width=True):
+            if st.button(suggestion, key=f"history_rephrase_{stable_key}_{idx}", use_container_width=True):
                 st.session_state.auto_query = suggestion
                 st.rerun()

@@ -9,7 +9,7 @@ import streamlit as st
 from modules.ai_code_generator import generate_analysis_code
 from modules.ai_conversation import generate_conversational_response
 from modules.auto_insights import generate_auto_insights
-from modules.auto_visualizer import auto_visualize, validate_chart_data
+from modules.auto_visualizer import auto_visualize, build_chart_from_query, validate_chart_data
 from modules.code_executor import execute_code
 from modules.forecasting import forecast_revenue
 from modules.insight_engine import generate_business_insight
@@ -289,8 +289,8 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     if "_qctr" not in st.session_state:
         st.session_state["_qctr"] = 0
 
-    for entry in st.session_state.chat_history:
-        render_chat_history_entry(entry)
+    for entry_index, entry in enumerate(st.session_state.chat_history):
+        render_chat_history_entry(entry, entry_index=entry_index)
 
     _render_try_asking_section(df, schema)
 
@@ -548,6 +548,28 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         else:
             render_assistant_bubble(clean_response)
 
+        # Inline chart rendered directly under the prose answer when the
+        # AI's textual reply was the whole result. We only do this when no
+        # explicit chart_data is in play — the chart_data path below already
+        # owns its own visualization. Trend / distribution / ranking /
+        # comparison questions otherwise leave the user with text only.
+        if (
+            chart_data is None
+            and not ai_charts
+            and not query_rejected
+            and not is_error_like_text(ai_response)
+        ):
+            try:
+                inline_chart = build_chart_from_query(query, df)
+            except Exception:
+                inline_chart = None
+            if inline_chart is not None:
+                render_chart_card(inline_chart, st, key_prefix=f"inline_chart_{qk}")
+                chart_figs = [inline_chart]
+
+    # Track inline charts separately so they can be persisted in chat history
+    inline_chart_figs = chart_figs if (chart_data is None and not ai_charts and chart_figs) else []
+
     if isinstance(chart_data, pd.DataFrame) and chart_data.empty:
         st.warning("No outliers found in the dataset based on the current criteria.")
         chart_data = None
@@ -639,6 +661,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         intent=intent_info.get("intent"),
         rephrases=rephrase_suggestions if (is_error_like_text(result) or is_error_like_text(ai_response)) else [],
         result_history_entry=build_result_history_entry(query, result, chart_data, intent_info, query_rejected),
+        inline_charts=inline_chart_figs,
     )
 
 

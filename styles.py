@@ -26,6 +26,53 @@ html, body, .stApp {
     font-family: 'Manrope', 'Segoe UI', sans-serif !important;
 }
 
+/* ─── Eliminate ALL white/light background bleed from Streamlit wrappers ─── */
+.stApp > header,
+.stApp > footer,
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"],
+header[data-testid="stHeader"],
+footer,
+.stApp > footer,
+.stDeployButton,
+#MainMenu,
+.block-container,
+[data-testid="block-container"],
+.stApp > div,
+.stApp > section,
+.stApp > section > div,
+.main,
+.main > div,
+section.main,
+section.main > div,
+section.main > div.block-container,
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] > div,
+[data-testid="stAppViewContainer"] > section,
+[data-testid="stAppViewBlockContainer"],
+[data-testid="stBottomBlockContainer"],
+[data-testid="stBottom"],
+[data-testid="stMainBlockContainer"] {
+    background: #03111d !important;
+    background-color: #03111d !important;
+}
+
+/* Hide the default Streamlit header / deploy bar completely */
+[data-testid="stHeader"] {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+/* Ensure bottom chat-input area also gets the dark bg */
+[data-testid="stBottom"],
+[data-testid="stBottomBlockContainer"] {
+    background: linear-gradient(180deg, transparent 0%, #03111d 12%) !important;
+}
+
 [data-testid="stSidebar"],
 section[data-testid="stSidebar"],
 [data-testid="stSidebar"] > div,
@@ -143,68 +190,74 @@ section[data-testid="stSidebar"],
     box-shadow: 0 10px 22px rgba(79, 70, 229, 0.26);
 }
 
-/* Radio-as-tabs navigation (replaces st.tabs for persistence across reruns) */
-.apex-tabs + div[data-testid="stRadio"] > label {
-    display: none !important;
-}
-
-.apex-tabs + div[data-testid="stRadio"] > div[role="radiogroup"] {
-    display: flex !important;
-    flex-wrap: wrap;
-    gap: 10px;
-    padding: 8px;
-    margin: 4px 0 0 0;
-    background: rgba(255,255,255,0.05);
+/* ─────────── Styled tab navigation (buttons-in-columns) ─────────── */
+/*
+ * Scoped via an adjacent-sibling selector off the .apex-tab-nav-marker
+ * element emitted just above the tab row. Only the buttons inside the
+ * st.columns immediately following the marker get this tab styling —
+ * the rest of the app's buttons are untouched.
+ */
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] .apex-tab-nav-marker)
+    + [data-testid="stElementContainer"] [data-testid="stHorizontalBlock"] {
+    gap: 10px !important;
+    padding: 8px !important;
+    background: rgba(255, 255, 255, 0.05);
     border: 1px solid var(--border-soft);
     border-radius: 16px;
-    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.2);
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.25);
 }
 
-.apex-tabs + div[data-testid="stRadio"] > div[role="radiogroup"] > label {
-    flex: 1 1 0;
-    min-width: 160px;
-    min-height: 46px;
-    padding: 10px 16px;
-    border-radius: 12px;
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(255,255,255,0.02);
-    color: var(--text-muted) !important;
-    font-weight: 700;
-    font-size: 14px;
-    transition: all 0.22s ease;
-    display: flex !important;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    position: relative;
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] .apex-tab-nav-marker)
+    + [data-testid="stElementContainer"] .stButton > button {
+    width: 100% !important;
+    min-height: 52px !important;
+    border-radius: 12px !important;
+    /* Brighter border + subtle outer glow so inactive tabs read as
+       clickable navigation, not disabled chips. */
+    border: 1px solid rgba(148, 163, 184, 0.42) !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: #e6eefc !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    letter-spacing: 0.01em;
+    transition: transform 0.2s ease, background 0.2s ease,
+                border-color 0.2s ease, color 0.2s ease,
+                box-shadow 0.2s ease !important;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+                0 4px 10px rgba(2, 6, 23, 0.28) !important;
 }
 
-.apex-tabs + div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover {
-    background: rgba(99, 102, 241, 0.10);
-    border-color: rgba(99, 102, 241, 0.35);
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] .apex-tab-nav-marker)
+    + [data-testid="stElementContainer"] .stButton > button:hover {
+    background: rgba(99, 102, 241, 0.12) !important;
+    border-color: rgba(99, 102, 241, 0.45) !important;
     color: #ffffff !important;
     transform: translateY(-1px);
 }
 
-.apex-tabs + div[data-testid="stRadio"] > div[role="radiogroup"] > label > div:first-child {
-    display: none !important;
-}
-
-.apex-tabs + div[data-testid="stRadio"] > div[role="radiogroup"] > label > div {
-    color: inherit !important;
-    font-weight: inherit !important;
-}
-
-.apex-tabs + div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) {
+/* Active tab = Streamlit "primary" button. Override the app-wide orange
+ * primary style (set later in this stylesheet) with a blue/indigo gradient
+ * so tabs look like navigation, not CTAs. */
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] .apex-tab-nav-marker)
+    + [data-testid="stElementContainer"] .stButton > button[kind="primary"],
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] .apex-tab-nav-marker)
+    + [data-testid="stElementContainer"] .stButton > button[kind="primary"]:hover,
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] .apex-tab-nav-marker)
+    + [data-testid="stElementContainer"] .stButton > button[kind="primary"]:focus {
     background: linear-gradient(135deg, var(--accent-a), var(--accent-b)) !important;
-    color: white !important;
-    border-color: rgba(129, 140, 248, 0.55) !important;
-    box-shadow: 0 10px 22px rgba(79, 70, 229, 0.32);
+    border: 1px solid rgba(129, 140, 248, 0.65) !important;
+    color: #ffffff !important;
+    box-shadow: 0 10px 22px rgba(79, 70, 229, 0.35) !important;
     transform: translateY(-1px);
 }
 
-.apex-tabs + div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) > div {
-    color: white !important;
+/* Hide the tiny marker span itself */
+.apex-tab-nav-marker {
+    display: block;
+    height: 0;
+    width: 0;
+    overflow: hidden;
+    line-height: 0;
 }
 
 button, .stButton > button, .stDownloadButton > button {
