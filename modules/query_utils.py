@@ -212,97 +212,58 @@ def build_rephrase_suggestions(query: str, df: pd.DataFrame, schema: dict | None
 def is_dataset_related_query(query: str, df: pd.DataFrame, schema: dict | None = None) -> bool:
     """
     Decide if a user query is about the active dataset vs. general chit‑chat.
+
+    Errs on the side of acceptance — it is better to run an analysis that
+    returns a gentle "I couldn't find that column" than to reject a
+    legitimate question with "not related to this dataset."
     """
     q = str(query).strip().lower()
     if not q:
         return False
 
+    # ── Vocabulary of terms that signal an analytical intent ──────────
     analytics_keywords = {
-        "sum",
-        "total",
-        "average",
-        "avg",
-        "mean",
-        "max",
-        "min",
-        "highest",
-        "lowest",
-        "top",
-        "bottom",
-        "count",
-        "trend",
-        "compare",
-        "difference",
-        "distribution",
-        "forecast",
-        "predict",
-        "growth",
-        "decline",
-        "increase",
-        "decrease",
-        "revenue",
-        "sales",
-        "profit",
-        "cost",
-        "region",
-        "date",
-        "month",
-        "year",
-        "department",
-        "employee",
-        "category",
-        "product",
-        "segment",
-        "kpi",
-        "metric",
-        "show",
-        "list",
-        "group",
-        "filter",
-        "by",
-        "across",
-        "over",
-        "outlier",
+        # aggregation / statistics
+        "sum", "total", "average", "avg", "mean", "median", "max", "min",
+        "highest", "lowest", "top", "bottom", "count", "aggregate",
+        # visualisation
+        "chart", "plot", "graph", "visualize", "visualise", "visualization",
+        "line", "bar", "heatmap", "scatter", "boxplot", "histogram", "pie",
+        "series", "time",
+        # analysis
+        "trend", "analyze", "analyse", "analysis", "compare", "comparison",
+        "difference", "distribution", "forecast", "predict", "projection",
+        "growth", "decline", "increase", "decrease", "change", "changes",
+        "pattern", "anomaly", "outlier", "correlation", "relationship",
+        # common business dimensions
+        "revenue", "sales", "profit", "cost", "price", "amount", "income",
+        "region", "date", "month", "year", "day", "week", "quarter",
+        "department", "employee", "category", "product", "segment",
+        "route", "ridership", "rides",
+        # meta
+        "kpi", "metric", "insight", "summary", "summarize", "overview",
+        "show", "list", "group", "filter", "sort", "rank",
+        "by", "across", "over", "per",
     }
 
+    # Stopwords should NOT include terms that are also analytics keywords.
+    # "over", "by", "show", etc. must survive so they can be matched.
     stopwords = {
-        "the",
-        "a",
-        "an",
-        "is",
-        "are",
-        "was",
-        "were",
-        "to",
-        "of",
-        "for",
-        "in",
-        "on",
-        "and",
-        "or",
-        "with",
-        "me",
-        "my",
-        "please",
-        "what",
-        "which",
-        "who",
-        "when",
-        "where",
-        "why",
-        "how",
-        "tell",
-        "give",
-        "about",
-        "from",
-        "into",
-        "than",
+        "the", "a", "an", "is", "are", "was", "were",
+        "to", "of", "for", "in", "on", "and", "or",
+        "with", "me", "my", "please", "what", "which",
+        "who", "when", "where", "why", "how", "tell",
+        "give", "about", "from", "into", "than", "it",
+        "this", "that", "do", "does", "did", "can", "could",
+        "would", "should", "i", "we", "you",
     }
+    # Guarantee no analytics keyword is accidentally removed as a stopword
+    stopwords -= analytics_keywords
 
     query_tokens = _tokenize_query_text(q)
     meaningful_tokens = query_tokens - stopwords
 
-    # Memory / comparison queries are considered dataset‑related
+    # Memory / comparison queries are always dataset‑related
     if is_memory_query(q):
         return True
 
@@ -312,6 +273,7 @@ def is_dataset_related_query(query: str, df: pd.DataFrame, schema: dict | None =
     matched_dataset_terms = meaningful_tokens & dataset_tokens
     matched_analytics_terms = meaningful_tokens & analytics_keywords
 
+    # ── Direct hit on any dataset token (column name, sample value) ───
     if matched_dataset_terms:
         return True
 
@@ -321,7 +283,26 @@ def is_dataset_related_query(query: str, df: pd.DataFrame, schema: dict | None =
     if "top" in q and len(df.columns) > 0:
         return True
 
-    return len(matched_analytics_terms) >= 2 and len(meaningful_tokens) <= 8
+    # ── Substring / stem matching ────────────────────────────────────
+    # Catches paraphrases like "ridership" when a column has "rides",
+    # or "monthly" when a column has "month".
+    col_tokens = set()
+    for col in df.columns:
+        col_tokens.update(_tokenize_query_text(col))
+    for qt in meaningful_tokens:
+        for ct in col_tokens:
+            if len(qt) >= 4 and len(ct) >= 3 and (qt in ct or ct in qt):
+                return True
+
+    # ── Analytics intent alone is enough when it's strong ────────────
+    if len(matched_analytics_terms) >= 2:
+        return True
+
+    # Even a single analytics term + a reasonably short query is accepted
+    if len(matched_analytics_terms) >= 1 and len(meaningful_tokens) <= 10:
+        return True
+
+    return False
 
 
 def get_irrelevant_query_message(schema: dict) -> str:
