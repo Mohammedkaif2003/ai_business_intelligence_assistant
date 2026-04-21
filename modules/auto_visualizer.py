@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 import pandas as pd
@@ -448,6 +449,152 @@ def _build_stacked_bar_chart(df: pd.DataFrame, x_col: str, y_cols: list[str], wa
     return payload
 
 
+def _build_boxplot(df: pd.DataFrame, y_col: str, x_col: str | None, warnings: list[str]) -> dict:
+    """Box-and-whisker plot — optionally grouped by a categorical column."""
+    import plotly.graph_objects as go
+
+    if x_col and x_col in df.columns and df[x_col].nunique(dropna=True) <= MAX_CATEGORY_POINTS:
+        plot_df = df[[x_col, y_col]].dropna().copy()
+        fig = px.box(
+            plot_df,
+            x=x_col,
+            y=y_col,
+            color=x_col,
+            template="plotly_white",
+            color_discrete_sequence=SERIES_PALETTE,
+            title=f"Distribution of {_format_axis_name(y_col)} by {_format_axis_name(x_col)}",
+        )
+        x_label = x_col
+    else:
+        plot_df = df[[y_col]].dropna().copy()
+        fig = px.box(
+            plot_df,
+            y=y_col,
+            template="plotly_white",
+            color_discrete_sequence=[PRIMARY],
+            title=f"Distribution of {_format_axis_name(y_col)}",
+        )
+        x_label = y_col
+
+    fig.update_traces(
+        marker=dict(size=5, opacity=0.6),
+        boxmean="sd",
+    )
+    _apply_common_layout(fig, x_label, [y_col])
+    fig.update_layout(showlegend=False)
+
+    numeric_series = pd.to_numeric(plot_df[y_col], errors="coerce").dropna()
+    summary = [
+        f"Median {_format_axis_name(y_col)} is {_format_metric_value(numeric_series.median(), y_col)}.",
+        f"IQR spans {_format_metric_value(numeric_series.quantile(0.25), y_col)} to {_format_metric_value(numeric_series.quantile(0.75), y_col)}.",
+    ]
+    return _base_chart_payload(
+        fig, "boxplot", fig.layout.title.text,
+        "Using a box plot to show the median, quartiles, and potential outliers.",
+        plot_df, x_label, [y_col], warnings,
+        summary_override=summary,
+    )
+
+
+def _build_heatmap(df: pd.DataFrame, numeric_cols: list[str], warnings: list[str]) -> dict | None:
+    """Correlation heatmap across all numeric columns (needs >= 2)."""
+    if len(numeric_cols) < 2:
+        return None
+
+    corr_cols = numeric_cols[:8]  # cap at 8 to keep the chart readable
+    corr_df = df[corr_cols].apply(pd.to_numeric, errors="coerce")
+    corr_matrix = corr_df.corr()
+    if corr_matrix.empty:
+        return None
+
+    fig = px.imshow(
+        corr_matrix,
+        text_auto=".2f",
+        color_continuous_scale=["#312E81", "#4F46E5", "#818CF8", "#C7D2FE",
+                                "#FDE68A", "#F59E0B", "#DC2626"],
+        aspect="auto",
+        template="plotly_white",
+        title="Correlation Heatmap",
+    )
+    fig.update_layout(
+        title=dict(font=dict(size=18, family="Manrope, Segoe UI, sans-serif")),
+        height=520,
+        margin=dict(l=70, r=30, t=60, b=70),
+        font=dict(family="Manrope, Segoe UI, sans-serif", size=12),
+    )
+
+    # Find strongest correlation (excluding self-correlations)
+    import numpy as np
+    mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
+    tri = corr_matrix.where(mask)
+    max_corr = tri.stack().abs().idxmax() if not tri.stack().empty else None
+    summary = []
+    if max_corr:
+        val = corr_matrix.loc[max_corr[0], max_corr[1]]
+        summary.append(f"Strongest correlation: {_format_axis_name(max_corr[0])} ↔ {_format_axis_name(max_corr[1])} ({val:.2f}).")
+    summary.append(f"Showing {len(corr_cols)} numeric columns.")
+
+    return _base_chart_payload(
+        fig, "heatmap", "Correlation Heatmap",
+        "Using a heatmap to show the strength of linear relationships between numeric variables.",
+        corr_matrix.reset_index().rename(columns={"index": "Variable"}),
+        "Variable", corr_cols[:1], warnings,
+        summary_override=summary,
+    )
+
+
+def _build_outlier_chart(df: pd.DataFrame, y_col: str, x_col: str | None, warnings: list[str]) -> dict | None:
+    """IQR-based outlier detection rendered as a scatter with outliers highlighted."""
+    numeric_series = pd.to_numeric(df[y_col], errors="coerce").dropna()
+    if len(numeric_series) < 4:
+        return None
+
+    q1 = numeric_series.quantile(0.25)
+    q3 = numeric_series.quantile(0.75)
+    iqr = q3 - q1
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+
+    plot_df = df.loc[numeric_series.index].copy()
+    plot_df["_outlier"] = ((numeric_series < lower) | (numeric_series > upper)).map({True: "Outlier", False: "Normal"})
+    outlier_count = (plot_df["_outlier"] == "Outlier").sum()
+
+    if outlier_count == 0:
+        return None
+
+    x_axis = x_col if (x_col and x_col in plot_df.columns) else plot_df.index.name or "Index"
+    if x_axis == "Index":
+        plot_df["Index"] = range(len(plot_df))
+
+    fig = px.scatter(
+        plot_df,
+        x=x_axis,
+        y=y_col,
+        color="_outlier",
+        color_discrete_map={"Normal": PRIMARY_SOFT, "Outlier": "#EF4444"},
+        template="plotly_white",
+        title=f"Outlier Detection — {_format_axis_name(y_col)} ({outlier_count} outlier{'s' if outlier_count != 1 else ''})",
+    )
+    fig.update_traces(marker=dict(size=8, opacity=0.8, line=dict(width=1, color="#FFFFFF")))
+    # Draw IQR bounds
+    fig.add_hline(y=upper, line_dash="dash", line_color="#F59E0B", annotation_text="Upper bound")
+    fig.add_hline(y=lower, line_dash="dash", line_color="#F59E0B", annotation_text="Lower bound")
+    _apply_common_layout(fig, x_axis, [y_col])
+    fig.update_layout(legend_title_text="")
+
+    summary = [
+        f"{outlier_count} outlier{'s' if outlier_count != 1 else ''} detected in {_format_axis_name(y_col)}.",
+        f"IQR bounds: {_format_metric_value(lower, y_col)} – {_format_metric_value(upper, y_col)}.",
+    ]
+    return _base_chart_payload(
+        fig, "outlier", fig.layout.title.text,
+        "Using a scatter plot with IQR-based outlier highlighting.",
+        plot_df.drop(columns=["_outlier"], errors="ignore"),
+        x_axis, [y_col], warnings,
+        summary_override=summary,
+    )
+
+
 def chart_download_bytes(chart: dict) -> bytes:
     data = chart.get("data")
     if isinstance(data, pd.DataFrame):
@@ -542,6 +689,272 @@ def build_graph_follow_up_questions(chart: dict) -> list[str]:
     return [item["question"] for item in build_graph_follow_up_suggestions(chart)]
 
 
+_TREND_TOKENS = (
+    "over time", "trend", "trends", "by month", "by year", "by date",
+    "by quarter", "by week", "by day", "history", "historical",
+    "evolution", "evolved", "changed over", "change over", "growth",
+    "monthly", "yearly", "quarterly", "weekly", "daily", "time series",
+    "line chart", "line graph",
+)
+_DISTRIBUTION_TOKENS = (
+    "distribution", "distributions", "spread", "histogram", "frequency",
+    "how often", "shape of",
+)
+_RANKING_TOKENS = (
+    "top ", "bottom ", "rank", "highest", "lowest", "biggest", "smallest",
+    "best", "worst", "leading", "trailing", "most ", "least ",
+)
+_COMPARISON_TOKENS = (
+    "compare", "comparison", " vs ", "versus", "across", "between",
+    "broken down", "breakdown", "by category",
+)
+_BOXPLOT_TOKENS = (
+    "boxplot", "box plot", "box-plot", "whisker", "quartile", "iqr",
+    "interquartile",
+)
+_SCATTER_TOKENS = (
+    "scatter", "scatter plot", "scatterplot", "relationship between",
+    "correlation between", "cluster", "clustering",
+)
+_HEATMAP_TOKENS = (
+    "heatmap", "heat map", "correlation matrix", "correlation heatmap",
+    "correlations",
+)
+_OUTLIER_TOKENS = (
+    "outlier", "outliers", "anomaly", "anomalies", "abnormal",
+    "unusual", "extreme value", "extreme values", "detect outlier",
+)
+_FORECAST_TOKENS = (
+    "forecast", "predict", "projection", "future", "next month",
+    "next year", "extrapolat", "forecast overlay",
+)
+
+
+def _normalize_token(value: str) -> str:
+    return re.sub(r"[_\s]+", " ", str(value).lower()).strip()
+
+
+def _column_mentioned(query_lc: str, column: str) -> bool:
+    norm = _normalize_token(column)
+    if not norm:
+        return False
+    if norm in query_lc:
+        return True
+    # Strip very short suffixes like "id" / single-letter tokens to avoid noise
+    parts = [p for p in norm.split() if len(p) > 2]
+    if not parts:
+        return False
+    # All meaningful tokens of the column name appear in the query
+    return all(p in query_lc for p in parts)
+
+
+def build_chart_from_query(query: str, data: Any) -> dict | None:
+    """
+    Detect chart intent from a natural-language query and produce the right
+    chart directly from the dataframe — even when the AI's textual reply
+    didn't return a chartable result.  Supports: trend / line, boxplot,
+    heatmap, scatter, outlier, forecast, distribution, ranking, comparison.
+    """
+    df = _copy_as_dataframe(data)
+    if df is None or df.empty:
+        return None
+
+    query_lc = (query or "").lower()
+    if not query_lc:
+        return None
+
+    is_trend       = any(tok in query_lc for tok in _TREND_TOKENS)
+    is_distribution = any(tok in query_lc for tok in _DISTRIBUTION_TOKENS)
+    is_ranking     = any(tok in query_lc for tok in _RANKING_TOKENS)
+    is_comparison  = any(tok in query_lc for tok in _COMPARISON_TOKENS)
+    is_boxplot     = any(tok in query_lc for tok in _BOXPLOT_TOKENS)
+    is_scatter     = any(tok in query_lc for tok in _SCATTER_TOKENS)
+    is_heatmap     = any(tok in query_lc for tok in _HEATMAP_TOKENS)
+    is_outlier     = any(tok in query_lc for tok in _OUTLIER_TOKENS)
+    is_forecast    = any(tok in query_lc for tok in _FORECAST_TOKENS)
+
+    has_intent = any([
+        is_trend, is_distribution, is_ranking, is_comparison,
+        is_boxplot, is_scatter, is_heatmap, is_outlier, is_forecast,
+    ])
+    if not has_intent:
+        return None
+
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    if not numeric_cols:
+        return None
+
+    # Pick the metric the user named, falling back to the heaviest numeric col.
+    target_metric = next(
+        (col for col in numeric_cols if _column_mentioned(query_lc, col)),
+        None,
+    )
+    if target_metric is None:
+        target_metric = max(
+            numeric_cols,
+            key=lambda c: pd.to_numeric(df[c], errors="coerce").fillna(0).sum(),
+        )
+
+    datetime_cols, categorical_cols = _prepare_dimension_columns(df)
+
+    # ── Outlier detection chart ──────────────────────────────────────
+    if is_outlier:
+        cat_col = categorical_cols[0] if categorical_cols else None
+        outlier_chart = _build_outlier_chart(df, target_metric, cat_col, [])
+        if outlier_chart:
+            return outlier_chart
+        # No outliers found — fall through to boxplot which still shows the spread
+        return _build_boxplot(df, target_metric, cat_col, [])
+
+    # ── Boxplot ──────────────────────────────────────────────────────
+    if is_boxplot:
+        cat_col = categorical_cols[0] if categorical_cols else None
+        return _build_boxplot(df, target_metric, cat_col, [])
+
+    # ── Heatmap / correlation matrix ─────────────────────────────────
+    if is_heatmap:
+        heatmap = _build_heatmap(df, numeric_cols, [])
+        if heatmap:
+            return heatmap
+        # Fallback: if only 1 numeric col, show distribution instead
+        return _build_histogram(df, target_metric, [])
+
+    # ── Scatter / clustering ─────────────────────────────────────────
+    if is_scatter:
+        # Find second numeric column
+        other_numerics = [c for c in numeric_cols if c != target_metric]
+        if other_numerics:
+            second_metric = other_numerics[0]
+            scatter = _build_scatter_chart(
+                df,
+                categorical_cols[0] if categorical_cols else target_metric,
+                [target_metric, second_metric],
+                [],
+            )
+            if scatter:
+                return scatter
+        # Fallback: show boxplot if only one numeric column
+        cat_col = categorical_cols[0] if categorical_cols else None
+        return _build_boxplot(df, target_metric, cat_col, [])
+
+    # ── Forecast with linear extrapolation overlay ───────────────────
+    if is_forecast and datetime_cols:
+        import numpy as np
+        date_col = datetime_cols[0]
+        trend_df = df[[date_col, target_metric]].dropna().copy()
+        try:
+            trend_df[date_col] = pd.to_datetime(trend_df[date_col], errors="coerce")
+            trend_df = trend_df.dropna(subset=[date_col])
+        except Exception:
+            pass
+        if len(trend_df) >= 4:
+            grouped = (
+                trend_df.groupby(date_col)[target_metric]
+                .mean()
+                .reset_index()
+                .sort_values(date_col)
+            )
+            # Simple linear forecast
+            x_num = np.arange(len(grouped)).astype(float)
+            y_vals = grouped[target_metric].values.astype(float)
+            coeffs = np.polyfit(x_num, y_vals, 1)
+            # Forecast next 20% of existing range
+            n_forecast = max(int(len(grouped) * 0.2), 3)
+            future_x = np.arange(len(grouped), len(grouped) + n_forecast).astype(float)
+            future_y = np.polyval(coeffs, future_x)
+            # Build future dates
+            last_date = grouped[date_col].max()
+            try:
+                freq = pd.infer_freq(grouped[date_col])
+            except Exception:
+                freq = None
+            if freq:
+                future_dates = pd.date_range(start=last_date, periods=n_forecast + 1, freq=freq)[1:]
+            else:
+                avg_delta = (grouped[date_col].diff().mean())
+                future_dates = [last_date + avg_delta * (i + 1) for i in range(n_forecast)]
+            forecast_df = pd.DataFrame({date_col: future_dates, target_metric: future_y})
+
+            fig = px.line(
+                grouped, x=date_col, y=target_metric,
+                markers=True, template="plotly_white",
+                color_discrete_sequence=[PRIMARY],
+                title=f"{_format_axis_name(target_metric)} — Actual + Forecast",
+            )
+            fig.update_traces(
+                line=dict(width=3),
+                marker=dict(size=8, line=dict(width=2, color="#FFFFFF")),
+                name="Actual",
+            )
+            fig.add_scatter(
+                x=forecast_df[date_col], y=forecast_df[target_metric],
+                mode="lines+markers",
+                line=dict(dash="dash", width=3, color=TERTIARY),
+                marker=dict(size=8, line=dict(width=2, color="#FFFFFF"), color=TERTIARY),
+                name="Forecast",
+            )
+            _apply_common_layout(fig, date_col, [target_metric])
+            fig.update_layout(showlegend=True)
+            return _base_chart_payload(
+                fig, "forecast", fig.layout.title.text,
+                "Line chart with linear forecast overlay (dashed).",
+                pd.concat([grouped, forecast_df], ignore_index=True),
+                date_col, [target_metric], [],
+                summary_override=[
+                    f"Forecasting {n_forecast} future periods for {_format_axis_name(target_metric)}.",
+                    f"Linear trend slope: {coeffs[0]:,.2f} per period.",
+                ],
+            )
+
+    # ── Trend → line chart over the best date column ─────────────────
+    if is_trend and datetime_cols:
+        date_col = datetime_cols[0]
+        trend_df = df[[date_col, target_metric]].dropna().copy()
+        try:
+            trend_df[date_col] = pd.to_datetime(trend_df[date_col], errors="coerce")
+            trend_df = trend_df.dropna(subset=[date_col])
+        except Exception:
+            pass
+        if not trend_df.empty:
+            grouped = (
+                trend_df.groupby(date_col)[target_metric]
+                .mean()
+                .reset_index()
+                .sort_values(date_col)
+            )
+            if len(grouped) >= 2:
+                return _build_line_chart(grouped, date_col, target_metric, [])
+
+    # ── Distribution → histogram ─────────────────────────────────────
+    if is_distribution:
+        return _build_histogram(df, target_metric, [])
+
+    # ── Ranking / comparison → bar chart ─────────────────────────────
+    if is_ranking or is_comparison:
+        target_cat = next(
+            (col for col in categorical_cols if _column_mentioned(query_lc, col)),
+            None,
+        )
+        if target_cat is None and categorical_cols:
+            target_cat = categorical_cols[0]
+        if target_cat is not None:
+            grouped = (
+                df.groupby(target_cat, dropna=False)[target_metric]
+                .sum()
+                .reset_index()
+                .sort_values(target_metric, ascending=False)
+                .head(MAX_CATEGORY_POINTS)
+            )
+            if not grouped.empty:
+                return _build_bar_chart(grouped, target_cat, target_metric, [])
+
+    # ── Fallback: forecast without date → histogram ──────────────────
+    if (is_forecast or is_trend) and not datetime_cols:
+        return _build_histogram(df, target_metric, [])
+
+    return None
+
+
 def auto_visualize(data: Any) -> list[dict]:
     validated_df, validation_warnings = validate_chart_data(data)
     if validated_df is None:
@@ -577,6 +990,20 @@ def auto_visualize(data: Any) -> list[dict]:
 
     charts.append(_build_histogram(df, numeric_cols[0], validation_warnings.copy()))
 
+    # Boxplot — shows quartiles & outlier whiskers
+    cat_col = categorical_cols[0] if categorical_cols else None
+    charts.append(_build_boxplot(df, numeric_cols[0], cat_col, validation_warnings.copy()))
+
+    # Heatmap — correlation matrix when there are multiple numeric columns
+    heatmap = _build_heatmap(df, numeric_cols, validation_warnings.copy())
+    if heatmap:
+        charts.append(heatmap)
+
+    # Outlier detection
+    outlier = _build_outlier_chart(df, numeric_cols[0], cat_col, validation_warnings.copy())
+    if outlier:
+        charts.append(outlier)
+
     deduped: list[dict] = []
     seen_titles: set[str] = set()
     for chart in charts:
@@ -585,5 +1012,5 @@ def auto_visualize(data: Any) -> list[dict]:
             deduped.append(chart)
             seen_titles.add(title)
 
-    logger.info("Auto-visualizer produced %s chart option(s)", len(deduped[:5]))
-    return deduped[:5]
+    logger.info("Auto-visualizer produced %s chart option(s)", len(deduped[:8]))
+    return deduped[:8]
