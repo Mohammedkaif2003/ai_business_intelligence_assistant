@@ -84,19 +84,27 @@ CONTENT RULES:
 """
 
 def _build_data_context(result, insight=""):
-    """Build a rich data summary for the AI to analyze."""
+    """Build a rich but size-capped data summary for the AI to analyze."""
     data_summary = ""
     if isinstance(result, pd.DataFrame):
         stats = ""
         numeric_cols = result.select_dtypes(include="number").columns
         if len(numeric_cols) > 0:
-            desc = result[numeric_cols].describe().to_string()
+            # Cap to first 6 numeric columns to avoid massive describe output
+            desc_cols = numeric_cols[:6]
+            desc = result[desc_cols].describe().to_string()
+            if len(desc) > 1200:
+                desc = desc[:1200] + "\n..."
             stats = f"\nStatistical summary:\n{desc}"
 
+        head_str = result.head(5).to_string(index=False)
+        if len(head_str) > 1200:
+            head_str = head_str[:1200] + "\n..."
+
         data_summary = f"""Data returned: DataFrame with {result.shape[0]} rows and {result.shape[1]} columns.
-Columns: {', '.join(str(c) for c in result.columns)}
+Columns: {', '.join(str(c) for c in result.columns[:15])}
 First rows:
-{result.head(8).to_string(index=False)}
+{head_str}
 {stats}
 """
     elif isinstance(result, pd.Series):
@@ -193,17 +201,27 @@ def generate_conversational_response(query, result, insight="", df=None, concise
       where *text* is the sanitized insight paragraph and *chart_code*
       is executable Python (may be empty if the model didn't produce one).
     """
+    import logging
+    logger = logging.getLogger("ai_conversation")
 
     # Build data summary (with optional dataset context)
     data_summary = _build_data_context(result, insight)
 
-    # Add dataset preview if available
+    # Add dataset preview if available — cap size to avoid token blowout
     if df is not None:
         try:
-            df_preview = df.head(10).to_string()
-            data_summary += f"\n\nFull Dataset Preview:\n{df_preview}"
+            preview = df.head(5).to_string()
+            if len(preview) > 1500:
+                preview = preview[:1500] + "\n... (truncated)"
+            data_summary += f"\n\nDataset Preview (first 5 rows):\n{preview}"
+            data_summary += f"\n\nDataset columns: {', '.join(str(c) for c in df.columns)}"
+            data_summary += f"\nDataset shape: {df.shape[0]} rows × {df.shape[1]} columns"
         except Exception:
             pass
+
+    # Hard cap on overall prompt data to prevent token limit errors
+    if len(data_summary) > 4000:
+        data_summary = data_summary[:4000] + "\n... (truncated for brevity)"
 
     prompt = f"""The user asked: "{query}"
 
@@ -215,8 +233,8 @@ Analyze this data using your senior analyst framework. Be specific to THIS data 
     # Choose the system prompt depending on concise flag
     system_prompt = ANALYST_CONCISE_PROMPT if concise else ANALYST_SYSTEM_PROMPT
     # Allow more tokens when the model is expected to produce code + insight
-    max_tokens_gemini = 800 if concise else 350
-    max_tokens_groq = 1000 if concise else 600
+    max_tokens_gemini = 1200 if concise else 500
+    max_tokens_groq = 1500 if concise else 800
 
     raw_response = None
 
@@ -236,12 +254,28 @@ Analyze this data using your senior analyst framework. Be specific to THIS data 
                     max_output_tokens=max_tokens_gemini
                 )
             )
-            if response and response.text:
-                raw_response = response.text
-        except Exception:
-            pass  # fallback
+            # response.text raises ValueError if the response was blocked
+            # by safety filters. Check candidates first.
+            if response and response.candidates:
+                candidate = response.candidates[0]
+                if candidate.finish_reason.name in ("STOP", "MAX_TOKENS"):
+                    try:
+                        raw_response = response.text
+                    except ValueError:
+                        # Safety filter or empty response
+                        logger.warning("Gemini returned but text access failed (safety filter?)")
+                else:
+                    logger.warning(
+                        "Gemini response blocked: finish_reason=%s",
+                        candidate.finish_reason.name,
+                    )
+            elif response:
+                # No candidates at all — usually a safety block
+                logger.warning("Gemini returned no candidates (likely safety block)")
+        except Exception as exc:
+            logger.warning("Gemini API call failed: %s", exc)
 
-    # Fallback: Groq
+    # Fallback: Groq (primary model)
     if raw_response is None and GROQ_API_KEY:
         try:
             from groq import Groq
@@ -256,15 +290,34 @@ Analyze this data using your senior analyst framework. Be specific to THIS data 
                 max_tokens=max_tokens_groq
             )
             raw_response = response.choices[0].message.content
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Groq primary model failed: %s", exc)
+
+    # Fallback: Groq (smaller/cheaper model with separate rate limits)
+    if raw_response is None and GROQ_API_KEY:
+        try:
+            from groq import Groq
+            client = Groq(api_key=GROQ_API_KEY)
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=max_tokens_groq
+            )
+            raw_response = response.choices[0].message.content
+        except Exception as exc:
+            logger.warning("Groq fallback model failed: %s", exc)
 
     if raw_response is None:
         fallback_text = (
-            "I couldn't generate an AI response for this query right now — the "
-            "language model didn't return a usable answer. Try rephrasing the "
-            "question, or pointing it at a specific column or time range in the "
-            "dataset."
+            "The AI language model is temporarily unavailable — this is usually "
+            "caused by API rate limits being reached. The data analysis and charts "
+            "above are still valid. Please wait a minute and try again, or check "
+            "that your API keys (GOOGLE_API_KEY / GROQ_API_KEY) are configured in "
+            "the .env file."
         )
         return {"text": fallback_text, "chart_code": ""} if concise else fallback_text
 
