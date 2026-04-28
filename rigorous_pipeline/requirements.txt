@@ -1,0 +1,17 @@
+# Pinned to versions verified to run the pipeline and tests on Python 3.11+.
+# Loosen upper bounds at your own risk.
+numpy>=1.26,<3.0
+pandas>=2.0,<4.0
+scipy>=1.11,<2.0
+scikit-learn>=1.4,<2.0
+statsmodels>=0.14,<1.0
+matplotlib>=3.7,<4.0
+pytest>=7.4,<10.0
+
+# Optional — interpret.shap_importance falls back to permutation importance
+# when shap is not installed.
+shap>=0.44; python_version < "3.13"
+
+# Optional notebook execution; only needed to re-run notebooks/.
+jupyter>=1.0
+nbconvert>=7.0
