@@ -10,6 +10,7 @@ st.set_page_config(
     page_title=APP_TITLE,
     page_icon=APP_ICON,
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 # ── Remaining imports (safe to do after set_page_config) ──────────────────
@@ -50,8 +51,37 @@ if not api_key:
 inject_styles(st)
 
 # ── Auth gate ────────────────────────────────────────────────────────────
-from auth import require_login, render_sidebar_user_badge
-require_login(APP_TITLE, APP_ICON)
+from auth import is_authenticated, render_login_view, render_sidebar_user_badge
+
+if not is_authenticated():
+    render_login_view(APP_TITLE, APP_ICON)
+    st.stop()
+
+st.markdown(
+    """
+    <style>
+        [data-testid="stHeader"] {
+            height: 3.5rem !important;
+            min-height: 3.5rem !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            background: transparent !important;
+        }
+        [data-testid="stSidebar"] {
+            display: block !important;
+            visibility: visible !important;
+        }
+        [data-testid="collapsedControl"] {
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            z-index: 999999 !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 logger = get_logger("app")
 ensure_analysis_state()
@@ -233,16 +263,25 @@ if "active_tab" not in st.session_state:
 if "auto_query" in st.session_state:
     st.session_state["active_tab"] = tab_labels[1]
 
-st.markdown('<div class="apex-tabs">', unsafe_allow_html=True)
-st.radio(
-    "Main navigation",
-    tab_labels,
-    horizontal=True,
-    label_visibility="collapsed",
-    key="active_tab",
-)
-st.markdown("</div>", unsafe_allow_html=True)
-st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+# Styled tab bar: buttons-in-columns gives full visual control over the
+# navigation. The `.apex-tab-nav-marker` span identifies the row so the
+# CSS in styles.py can target only these buttons via an adjacent-sibling
+# selector and not the rest of the app's buttons.
+st.markdown('<span class="apex-tab-nav-marker"></span>', unsafe_allow_html=True)
+_tab_cols = st.columns(len(tab_labels))
+for _idx, _label in enumerate(tab_labels):
+    with _tab_cols[_idx]:
+        _is_active = st.session_state["active_tab"] == _label
+        if st.button(
+            _label,
+            key=f"apex_tab_{_idx}",
+            use_container_width=True,
+            type="primary" if _is_active else "secondary",
+        ):
+            if not _is_active:
+                st.session_state["active_tab"] = _label
+                st.rerun()
+st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
 active_tab = st.session_state["active_tab"]
 if active_tab == tab_labels[0]:

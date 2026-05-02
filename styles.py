@@ -67,6 +67,15 @@ section.main > div.block-container,
     overflow: hidden !important;
 }
 
+/* Authenticated app: keep Streamlit's sidebar toggle reachable. */
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 999999 !important;
+}
+
 /* Ensure bottom chat-input area also gets the dark bg */
 [data-testid="stBottom"],
 [data-testid="stBottomBlockContainer"] {
