@@ -1,7 +1,7 @@
 # ── All app-wide constants ── edit this file to change settings
 
 APP_TITLE = "Apex Analytics"
-APP_VERSION = "2.0"
+APP_VERSION = "3.0"
 APP_ICON = "⚡"
 
 CHART_TEMPLATE = "plotly_white"

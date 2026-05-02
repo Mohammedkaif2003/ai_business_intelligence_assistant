@@ -66,6 +66,23 @@ from ui_components import (
 )
 
 
+def render_thinking_state(text: str = "AI is thinking..."):
+    """Render a premium custom thinking animation."""
+    st.markdown(
+        f"""
+        <div class="thinking-box">
+            <div class="thinking-dots">
+                <div class="thinking-dot"></div>
+                <div class="thinking-dot"></div>
+                <div class="thinking-dot"></div>
+            </div>
+            <div class="thinking-text">{text}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
 def _pick_preferred_column(columns: list[str], keywords: list[str]) -> str | None:
     if not columns:
         return None
@@ -176,8 +193,7 @@ def _render_try_asking_section(df: pd.DataFrame, schema: dict | None = None):
     if not suggestions:
         return
 
-    st.markdown('<div class="ai-theme-box">', unsafe_allow_html=True)
-    st.markdown("#### Try asking")
+    st.markdown('<div class="insight-chip-container">', unsafe_allow_html=True)
     for start in range(0, len(suggestions), 3):
         row_items = suggestions[start:start + 3]
         chip_cols = st.columns(len(row_items))
@@ -273,6 +289,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         """,
         unsafe_allow_html=True,
     )
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
     clear_col, _ = st.columns([0.25, 0.75])
     with clear_col:
@@ -296,11 +313,14 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     _render_try_asking_section(df, schema)
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-    query = st.chat_input("Ask anything about your data...", key="analyst_chat_input")
+    user_input = st.chat_input("Ask anything about your data...", key="analyst_chat_input")
 
-    if "auto_query" in st.session_state:
+    # Prioritize auto-query (from button clicks) over the manual input widget
+    if "auto_query" in st.session_state and st.session_state.auto_query:
         query = st.session_state.auto_query
-        del st.session_state.auto_query
+        st.session_state.auto_query = None
+    else:
+        query = user_input
 
     if not query:
         return
@@ -330,118 +350,122 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     record_timing("chat_intent_ms", (time.perf_counter() - intent_started) * 1000)
     rephrase_suggestions = build_rephrase_suggestions(query, df, schema, intent=intent_info.get("intent"))
 
-    with st.spinner("🔍 AI analyzing your dataset..."):
-        execution_started = time.perf_counter()
-        # Safe defaults — prevent NameError if an exception fires mid-execution
-        code = "# Analysis not executed"
-        execution_output = "An unexpected error occurred. Please try rephrasing your question."
-        ai_charts = []
+    thinking_ph = st.empty()
+    with thinking_ph:
+        render_thinking_state("🔍 AI analyzing your dataset...")
 
-        try:
-            if intent_info.get("needs_clarification"):
-                logger.info("chat_query_clarification_needed", extra={"intent": intent_info.get("intent")})
-                ai_response = build_clarification_prompt(query, df, schema)
-                code = "# Clarification requested before analysis"
-                result = ai_response
-                execution_output = result
-                ai_charts = []
-                chart_data = None
-                insight = ""
-                chart_figs = []
-                query_rejected = True
-            elif not is_dataset_related_query(query, df, schema):
-                logger.info("chat_query_rejected_not_dataset_related", extra={"intent": intent_info.get("intent")})
-                ai_response = get_irrelevant_query_message(schema)
-                code = "# Query rejected as unrelated to the active dataset"
-                result = ai_response
-                execution_output = result
-                ai_charts = []
-                chart_data = None
-                insight = ""
-                chart_figs = []
-                query_rejected = True
-            else:
-                enhanced_query = add_date_filter(add_filters(enhance_query(query, df), df), df)
-                simple_code = detect_simple_query(query, df)
+    execution_started = time.perf_counter()
+    # Safe defaults — prevent NameError if an exception fires mid-execution
+    code = "# Analysis not executed"
+    execution_output = "An unexpected error occurred. Please try rephrasing your question."
+    ai_charts = []
 
-                if is_memory_query(query) and "result_history_details" in st.session_state:
-                    logger.info("chat_query_memory_mode", extra={"history_len": len(st.session_state.get("result_history", []))})
-                    history = st.session_state.get("result_history", [])
-                    detailed_history = st.session_state.get("result_history_details", [])
+    try:
+        if intent_info.get("needs_clarification"):
+            logger.info("chat_query_clarification_needed", extra={"intent": intent_info.get("intent")})
+            ai_response = build_clarification_prompt(query, df, schema)
+            code = "# Clarification requested before analysis"
+            result = ai_response
+            execution_output = result
+            ai_charts = []
+            chart_data = None
+            insight = ""
+            chart_figs = []
+            query_rejected = True
+        elif not is_dataset_related_query(query, df, schema):
+            logger.info("chat_query_rejected_not_dataset_related", extra={"intent": intent_info.get("intent")})
+            ai_response = get_irrelevant_query_message(schema)
+            code = "# Query rejected as unrelated to the active dataset"
+            result = ai_response
+            execution_output = result
+            ai_charts = []
+            chart_data = None
+            insight = ""
+            chart_figs = []
+            query_rejected = True
+        else:
+            enhanced_query = add_date_filter(add_filters(enhance_query(query, df), df), df)
+            simple_code = detect_simple_query(query, df)
 
-                    if len(history) >= 2:
-                        last = history[-1]
-                        prev = history[-2]
-                        last_meta = detailed_history[-1] if len(detailed_history) >= 1 else {}
-                        prev_meta = detailed_history[-2] if len(detailed_history) >= 2 else {}
+            if is_memory_query(query) and "result_history_details" in st.session_state:
+                logger.info("chat_query_memory_mode", extra={"history_len": len(st.session_state.get("result_history", []))})
+                history = st.session_state.get("result_history", [])
+                detailed_history = st.session_state.get("result_history_details", [])
 
-                        try:
-                            if isinstance(last, (int, float)) and isinstance(prev, (int, float)):
-                                result = last - prev
-                            elif isinstance(last, pd.DataFrame) and isinstance(prev, pd.DataFrame):
-                                result = last.copy()
-                                num_cols = last.select_dtypes(include="number").columns
-                                for col in num_cols:
-                                    if col in prev.columns:
-                                        result[f"{col}_diff"] = last[col] - prev[col]
-                            else:
-                                result = (
-                                    f"Comparison not supported for the last two results. "
-                                    f"The previous result type was {prev_meta.get('result_type', 'unknown')} and "
-                                    f"the latest result type was {last_meta.get('result_type', 'unknown')}."
-                                )
-                        except Exception:
-                            result = last
+                if len(history) >= 2:
+                    last = history[-1]
+                    prev = history[-2]
+                    last_meta = detailed_history[-1] if len(detailed_history) >= 1 else {}
+                    prev_meta = detailed_history[-2] if len(detailed_history) >= 2 else {}
 
-                        code = "# Compared last two results"
-                        execution_output = result
-                    else:
-                        result = "Need at least two results to compare."
-                        code = "# Only one result available"
-                        execution_output = result
+                    try:
+                        if isinstance(last, (int, float)) and isinstance(prev, (int, float)):
+                            result = last - prev
+                        elif isinstance(last, pd.DataFrame) and isinstance(prev, pd.DataFrame):
+                            result = last.copy()
+                            num_cols = last.select_dtypes(include="number").columns
+                            for col in num_cols:
+                                if col in prev.columns:
+                                    result[f"{col}_diff"] = last[col] - prev[col]
+                        else:
+                            result = (
+                                f"Comparison not supported for the last two results. "
+                                f"The previous result type was {prev_meta.get('result_type', 'unknown')} and "
+                                f"the latest result type was {last_meta.get('result_type', 'unknown')}."
+                            )
+                    except Exception:
+                        result = last
+
+                    code = "# Compared last two results"
+                    execution_output = result
                 else:
-                    # ── Try deterministic analysis first ───────────────
-                    smart_result = run_smart_analysis(query, df)
-                    if smart_result is not None:
-                        logger.info("chat_query_smart_analysis_path", extra={"intent": intent_info.get("intent"), "query_type": smart_result.get("query_type")})
-                        code = f"# Smart analysis: {smart_result.get('query_type')}"
-                        result_val = smart_result.get("result")
-                        execution_output = result_val
-                        ai_charts = []
-                        smart_chart = smart_result.get("chart")
-                        if smart_chart is not None:
-                            ai_charts = [smart_chart]
-                        # Use narration-only mode for the AI response
-                        computed_summary = smart_result.get("summary", "")
-                        try:
-                            ai_response = narrate_result(query, computed_summary)
-                        except Exception:
-                            ai_response = computed_summary
-                    elif simple_code:
-                        logger.info("chat_query_simple_code_path", extra={"intent": intent_info.get("intent")})
-                        code = simple_code
-                        execution_output = execute_code(f"charts = []\nresult = {simple_code}", df)
-                        ai_charts = []
-                    else:
-                        logger.info("chat_query_ai_code_path", extra={"intent": intent_info.get("intent")})
-                        code = generate_analysis_code(api_key, enhanced_query, df, schema)
-                        execution_output = execute_code(code, df)
-                        ai_charts = []
+                    result = "Need at least two results to compare."
+                    code = "# Only one result available"
+                    execution_output = result
+            else:
+                # ── Try deterministic analysis first ───────────────
+                smart_result = run_smart_analysis(query, df)
+                if smart_result is not None:
+                    logger.info("chat_query_smart_analysis_path", extra={"intent": intent_info.get("intent"), "query_type": smart_result.get("query_type")})
+                    code = f"# Smart analysis: {smart_result.get('query_type')}"
+                    result_val = smart_result.get("result")
+                    execution_output = result_val
+                    ai_charts = []
+                    smart_chart = smart_result.get("chart")
+                    if smart_chart is not None:
+                        ai_charts = [smart_chart]
+                    # Use narration-only mode for the AI response
+                    computed_summary = smart_result.get("summary", "")
+                    try:
+                        ai_response = narrate_result(query, computed_summary)
+                    except Exception:
+                        ai_response = computed_summary
+                elif simple_code:
+                    logger.info("chat_query_simple_code_path", extra={"intent": intent_info.get("intent")})
+                    code = simple_code
+                    execution_output = execute_code(f"charts = []\nresult = {simple_code}", df)
+                    ai_charts = []
+                else:
+                    logger.info("chat_query_ai_code_path", extra={"intent": intent_info.get("intent")})
+                    code = generate_analysis_code(api_key, enhanced_query, df, schema)
+                    execution_output = execute_code(code, df)
+                    ai_charts = []
+        thinking_ph.empty()
+    except Exception as e:
+        thinking_ph.empty()
+        logger.error("chat_execution_error", extra={"error": str(e)[:300]})
+        execution_output = f"Analysis failed: {str(e)[:200]}. Please try rephrasing."
+        query_rejected = False  # Let the response path handle the error gracefully
 
-        except Exception as _exec_err:
-            logger.error("chat_execution_error", extra={"error": str(_exec_err)[:300]})
-            execution_output = f"Analysis failed: {str(_exec_err)[:200]}. Please try rephrasing."
-            query_rejected = False  # Let the response path handle the error gracefully
-
-        logger.info(
-            "chat_execution_completed",
-            extra={
-                "intent": intent_info.get("intent"),
-                "query_rejected": query_rejected,
-                "execution_ms": round((time.perf_counter() - execution_started) * 1000, 2),
-            },
-        )
-        record_timing("chat_execution_ms", (time.perf_counter() - execution_started) * 1000)
+    logger.info(
+        "chat_execution_completed",
+        extra={
+            "intent": intent_info.get("intent"),
+            "query_rejected": query_rejected,
+            "execution_ms": round((time.perf_counter() - execution_started) * 1000, 2),
+        },
+    )
+    record_timing("chat_execution_ms", (time.perf_counter() - execution_started) * 1000)
 
     if isinstance(execution_output, tuple):
         result, ai_charts = execution_output
@@ -483,104 +507,113 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         chart_data = result
 
     if is_error:
-        with st.spinner("💭 AI is thinking..."):
-            ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
+        thinking_ph = st.empty()
+        with thinking_ph:
+            render_thinking_state("💭 AI is thinking...")
+        ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
+        thinking_ph.empty()
     else:
         if chart_data is not None:
             insight = generate_business_insight(chart_data)
 
-        with st.spinner("💭 Preparing response..."):
-            response_started = time.perf_counter()
-            if is_memory_query(query):
-                history = st.session_state.get("result_history", [])
-                detailed_history = st.session_state.get("result_history_details", [])
+        thinking_ph = st.empty()
+        with thinking_ph:
+            render_thinking_state("💭 Preparing response...")
+        
+        response_started = time.perf_counter()
+        
+        # REMOVED: redundant st.container() that was causing ghost bars
+        if is_memory_query(query):
+            history = st.session_state.get("result_history", [])
+            detailed_history = st.session_state.get("result_history_details", [])
 
-                if len(history) < 2:
-                    ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
-                else:
-                    try:
-                        last = history[-1]
-                        prev = history[-2]
-                        last_meta = detailed_history[-1] if len(detailed_history) >= 1 else {}
-                        prev_meta = detailed_history[-2] if len(detailed_history) >= 2 else {}
-
-                        try:
-                            last_val = float(last)
-                            prev_val = float(prev)
-
-                            diff = last_val - prev_val
-                            growth = (diff / prev_val * 100) if prev_val != 0 else 0
-
-                            if diff > 0:
-                                trend = "Increasing 📈"
-                            elif diff < 0:
-                                trend = "Decreasing 📉"
-                            else:
-                                trend = "No change ➡"
-
-                            ai_response = f"""
-                📊 Difference: {diff:,.2f}
-
-                📈 Growth: {growth:.2f}%
-
-                📌 Trend: {trend}
-                """
-                        except (TypeError, ValueError):
-                            if isinstance(last, pd.DataFrame) and isinstance(prev, pd.DataFrame):
-                                ai_response = "📊 Comparison completed (difference columns added)."
-                            else:
-                                ai_response = (
-                                    "I understood this as a comparison request, but the last two saved results "
-                                    f"cannot be compared directly ({prev_meta.get('result_type', 'unknown')} vs "
-                                    f"{last_meta.get('result_type', 'unknown')})."
-                                )
-                    except Exception:
-                        ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
-
-            if not ai_response:
+            if len(history) < 2:
+                ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
+            else:
                 try:
-                    ai_result = generate_conversational_response(query=query, result=result, insight=insight, df=df, concise=True)
-                    if isinstance(ai_result, dict):
-                        ai_response = ai_result.get("text", "")
-                        # Execute any chart code the model produced
-                        ai_chart_code = ai_result.get("chart_code", "")
-                        if ai_chart_code:
-                            try:
-                                # Strip import lines — the executor blocks them
-                                clean_lines = [
-                                    ln for ln in ai_chart_code.split("\n")
-                                    if not ln.strip().startswith(("import ", "from "))
-                                ]
-                                safe_code = "\n".join(clean_lines)
-                                # Ensure required variables exist
-                                if "charts" not in safe_code:
-                                    safe_code = "charts = []\n" + safe_code
-                                if "result" not in safe_code:
-                                    safe_code += "\nresult = df.head(1)"
-                                code_output = execute_code(safe_code, df)
-                                if isinstance(code_output, tuple):
-                                    _code_result, _code_charts = code_output
-                                    if _code_charts:
-                                        ai_charts.extend(_code_charts)
-                                # If it returned a figure-like object directly, try to use it
-                                elif hasattr(code_output, "data"):
-                                    ai_charts.append(code_output)
-                            except Exception:
-                                pass  # chart code failed — still show the text insight
-                    else:
-                        # Backward-compat: plain string return
-                        ai_response = ai_result
+                    last = history[-1]
+                    prev = history[-2]
+                    last_meta = detailed_history[-1] if len(detailed_history) >= 1 else {}
+                    prev_meta = detailed_history[-2] if len(detailed_history) >= 2 else {}
+
+                    try:
+                        last_val = float(last)
+                        prev_val = float(prev)
+
+                        diff = last_val - prev_val
+                        growth = (diff / prev_val * 100) if prev_val != 0 else 0
+
+                        if diff > 0:
+                            trend = "Increasing 📈"
+                        elif diff < 0:
+                            trend = "Decreasing 📉"
+                        else:
+                            trend = "No change ➡"
+
+                        ai_response = f"""
+            📊 Difference: {diff:,.2f}
+
+            📈 Growth: {growth:.2f}%
+
+            📌 Trend: {trend}
+            """
+                    except (TypeError, ValueError):
+                        if isinstance(last, pd.DataFrame) and isinstance(prev, pd.DataFrame):
+                            ai_response = "📊 Comparison completed (difference columns added)."
+                        else:
+                            ai_response = (
+                                "I understood this as a comparison request, but the last two saved results "
+                                f"cannot be compared directly ({prev_meta.get('result_type', 'unknown')} vs "
+                                f"{last_meta.get('result_type', 'unknown')})."
+                            )
                 except Exception:
                     ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
 
-            logger.info(
-                "chat_response_prepared",
-                extra={
-                    "intent": intent_info.get("intent"),
-                    "response_ms": round((time.perf_counter() - response_started) * 1000, 2),
-                },
-            )
-            record_timing("chat_response_ms", (time.perf_counter() - response_started) * 1000)
+        if not ai_response:
+            try:
+                ai_result = generate_conversational_response(query=query, result=result, insight=insight, df=df, concise=True)
+                if isinstance(ai_result, dict):
+                    ai_response = ai_result.get("text", "")
+                    # Execute any chart code the model produced
+                    ai_chart_code = ai_result.get("chart_code", "")
+                    if ai_chart_code:
+                        try:
+                            # Strip import lines — the executor blocks them
+                            clean_lines = [
+                                ln for ln in ai_chart_code.split("\n")
+                                if not ln.strip().startswith(("import ", "from "))
+                            ]
+                            safe_code = "\n".join(clean_lines)
+                            # Ensure required variables exist
+                            if "charts" not in safe_code:
+                                safe_code = "charts = []\n" + safe_code
+                            if "result" not in safe_code:
+                                safe_code += "\nresult = df.head(1)"
+                            code_output = execute_code(safe_code, df)
+                            if isinstance(code_output, tuple):
+                                _code_result, _code_charts = code_output
+                                if _code_charts:
+                                    ai_charts.extend(_code_charts)
+                            # If it returned a figure-like object directly, try to use it
+                            elif hasattr(code_output, "data"):
+                                ai_charts.append(code_output)
+                        except Exception:
+                            pass  # chart code failed — still show the text insight
+                else:
+                    # Backward-compat: plain string return
+                    ai_response = ai_result
+            except Exception:
+                ai_response = build_failure_message(query, intent_info, schema, rephrase_suggestions)
+
+        logger.info(
+            "chat_response_prepared",
+            extra={
+                "intent": intent_info.get("intent"),
+                "response_ms": round((time.perf_counter() - response_started) * 1000, 2),
+            },
+        )
+        record_timing("chat_response_ms", (time.perf_counter() - response_started) * 1000)
+        thinking_ph.empty()
 
     if ai_response:
         clean_response = clean_text(ai_response)
@@ -660,15 +693,19 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
                 for idx, suggestion in enumerate(suggested_queries):
                     if st.button(suggestion, key=f"graphable_prompt_{qk}_{idx}", use_container_width=True):
                         st.session_state.auto_query = suggestion
+                        st.rerun() # Instant trigger
 
         if insight:
             render_insight_card(insight)
     else:
-        if isinstance(result, dict):
-            has_displayable = render_dict_result(result, f"dict_result_{qk}")
-            if not has_displayable and not ai_response:
-                st.info("The AI analyzed the data but the result format couldn't be displayed as a table.")
-        elif not ai_response and str(result) != "None":
+        if isinstance(result, dict) and result:
+            # Check if there's actually anything to display before opening the container
+            displayable_keys = [k for k, v in result.items() if not ("<Axes:" in str(v) or "<AxesSubplot" in str(v))]
+            if displayable_keys:
+                has_displayable = render_dict_result(result, f"dict_result_{qk}")
+                if not has_displayable and not ai_response:
+                    st.info("The AI analyzed the data but the result format couldn't be displayed as a table.")
+        elif not ai_response and str(result) not in ("None", "", "{}"):
             st.markdown('<div class="glass-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
             st.write(str(result))
             st.markdown("</div>", unsafe_allow_html=True)
@@ -686,6 +723,8 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
                     suggestions = build_follow_up_suggestions(query, df, schema, st.session_state.get("dataset_name"))
             except Exception:
                 suggestions = ""
+            
+            # Follow-up questions also need instant rerun in their component (handled in app_views)
             render_follow_up_section(suggestions, f"live_suggestion_{qk}")
 
             if is_error_like_text(result) or is_error_like_text(ai_response):
@@ -693,6 +732,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
                 for idx, suggestion in enumerate(rephrase_suggestions):
                     if st.button(suggestion, key=f"rephrase_prompt_{qk}_{idx}", use_container_width=True):
                         st.session_state.auto_query = suggestion
+                        st.rerun() # Instant trigger
 
     persist_analysis_cycle(
         query=query,

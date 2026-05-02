@@ -59,11 +59,12 @@ ensure_analysis_state()
 render_sidebar_user_badge()
 
 
-# ---------- SIDEBAR & DATASET LOADING ----------
-st.sidebar.subheader("📂 Select Data Source")
-# App branding in the sidebar
+# App branding at the very top
 from ui_components import render_sidebar_branding
 render_sidebar_branding(APP_TITLE, APP_ICON)
+
+# ---------- SIDEBAR & DATASET LOADING ----------
+st.sidebar.subheader("📂 Select Data Source")
 data_source = st.sidebar.radio(
     "Choose how to load data:",
     ["Upload CSV", "Use Pre-loaded Dataset"]

@@ -78,8 +78,9 @@ section[data-testid="stSidebar"],
 [data-testid="stSidebar"] > div,
 [data-testid="stSidebar"] > div:first-child,
 [data-testid="stSidebarNav"] {
-    background: linear-gradient(180deg, #0f172a 0%, #020617 100%) !important;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.94) 0%, rgba(2, 6, 23, 0.98) 100%) !important;
     border-right: 1px solid rgba(99, 102, 241, 0.14) !important;
+    backdrop-filter: blur(12px) !important;
 }
 
 [data-testid="stSidebar"] > div,
@@ -281,16 +282,30 @@ button, .stButton > button, .stDownloadButton > button {
     color: white !important;
 }
 
+/* Unified Input Container Styling (Username, Password, Select, Number, etc.) */
 [data-baseweb="select"] > div,
 [data-baseweb="select"] [role="combobox"],
 .stSelectbox div[data-baseweb="select"],
-.stTextInput > div > div > input,
-.stNumberInput input {
+.stTextInput > div > div,
+.stNumberInput > div > div,
+.stTextArea > div > div {
     background: linear-gradient(180deg, #0f172a 0%, #020617 100%) !important;
     color: #e2e8f0 !important;
-    border-radius: var(--card-radius) !important;
+    border-radius: 12px !important;
     border: 1px solid rgba(148, 163, 184, 0.22) !important;
-    box-shadow: var(--card-shadow) !important;
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.26) !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+/* Ensure all interactive children within these containers are transparent */
+.stTextInput input,
+.stNumberInput input,
+.stTextArea textarea,
+.stTextInput button {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #e2e8f0 !important;
 }
 
 /* Force dropdown popup menu (rendered in portal) to follow dark theme */
@@ -1100,6 +1115,79 @@ div[aria-selected="true"][role="option"] > div {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* Staggered Entry Animations */
+.stagger-1 { animation: fadeSlideIn 0.4s ease forwards; }
+.stagger-2 { animation: fadeSlideIn 0.4s ease 0.1s forwards; opacity: 0; }
+.stagger-3 { animation: fadeSlideIn 0.4s ease 0.2s forwards; opacity: 0; }
+.stagger-4 { animation: fadeSlideIn 0.4s ease 0.3s forwards; opacity: 0; }
+.stagger-5 { animation: fadeSlideIn 0.4s ease 0.4s forwards; opacity: 0; }
+
+/* Premium Insight Chips (Pills) */
+.insight-chip-container {
+    padding: 10px 0 !important;
+}
+
+.insight-chip-container .stButton > button {
+    background: rgba(99, 102, 241, 0.08) !important;
+    border: 1px solid rgba(99, 102, 241, 0.24) !important;
+    border-radius: 999px !important;
+    color: #c7d2fe !important;
+    padding: 6px 16px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    transition: all 0.25s ease !important;
+    white-space: nowrap !important;
+}
+
+.insight-chip-container .stButton > button:hover {
+    background: rgba(99, 102, 241, 0.18) !important;
+    border-color: #818cf8 !important;
+    color: #ffffff !important;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(79, 70, 229, 0.24) !important;
+}
+
+/* Custom AI Thinking State */
+.thinking-box {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 24px;
+    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 16px;
+    margin-bottom: 24px;
+    backdrop-filter: blur(8px);
+}
+
+.thinking-dots {
+    display: flex;
+    gap: 6px;
+}
+
+.thinking-dot {
+    width: 8px;
+    height: 8px;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    border-radius: 50%;
+    animation: thinkingBounce 1.4s infinite ease-in-out both;
+}
+
+.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes thinkingBounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+    40% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 12px rgba(99, 102, 241, 0.5); }
+}
+
+.thinking-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e2e8f0;
+    letter-spacing: 0.02em;
+}
+
 @media (max-width: 980px) {
     .block-container {
         padding-left: 1rem;
@@ -1192,6 +1280,97 @@ div[role="option"][aria-selected="true"] {
     color: #ecfffe !important;
 }
 
+/* ─────────────────── Apex Segmented Tabs (Global Radio Fix) ─────────────────── */
+/* Target the horizontal radio group used for navigation */
+div[role="radiogroup"][aria-orientation="horizontal"] {
+    background: rgba(15, 23, 42, 0.5) !important;
+    padding: 8px !important;
+    border-radius: 18px !important;
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    backdrop-filter: blur(12px) !important;
+    gap: 8px !important;
+    width: fit-content !important;
+    margin: 10px 0 24px 0 !important;
+}
+
+/* Force-hide the radio button circles/dots */
+div[role="radiogroup"][aria-orientation="horizontal"] > label > div:first-child {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+}
+
+/* Style the tab labels as modern buttons */
+div[role="radiogroup"][aria-orientation="horizontal"] label {
+    background: transparent !important;
+    border-radius: 12px !important;
+    padding: 10px 24px !important;
+    color: #94a3b8 !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    border: 1px solid transparent !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+}
+
+div[role="radiogroup"][aria-orientation="horizontal"] label:hover {
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: #f1f5f9 !important;
+}
+
+/* Active Tab State: Highlight the selected navigation item */
+div[role="radiogroup"][aria-orientation="horizontal"] label:has(input:checked) {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.24), rgba(139, 92, 246, 0.2)) !important;
+    border: 1px solid rgba(129, 140, 248, 0.45) !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 18px rgba(79, 70, 229, 0.28) !important;
+}
+
+/* Active Indicator */
+div[role="radiogroup"][aria-orientation="horizontal"] label:has(input:checked)::after {
+    content: "";
+    position: absolute;
+    bottom: 4px;
+    left: 30%;
+    right: 30%;
+    height: 2px;
+    background: #818cf8;
+    border-radius: 2px;
+    box-shadow: 0 0 8px #6366f1;
+}
+
+@media (max-width: 980px) {
+    div[role="radiogroup"][aria-orientation="horizontal"] {
+        flex-direction: column !important;
+        width: 100% !important;
+    }
+}
+
+[data-testid="stFileUploader"],
+[data-testid="stFileUploaderDropzone"],
+[data-testid="stFileUploader"] section,
+[data-testid="stFileUploader"] article {
+    background: #020617 !important;
+    border-color: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+
+[data-testid="stFileUploader"] {
+    border: 1px dashed #1e293b !important;
+    border-radius: 14px !important;
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.26) !important;
+}
+
+[data-testid="stFileUploader"] button,
+[data-testid="stFileUploader"] div[role="button"] {
+    background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
+    border: 1px solid rgba(199, 210, 254, 0.35) !important;
+    color: #ecfffe !important;
+}
+
 [data-testid="stFileUploader"] button *,
 [data-testid="stFileUploader"] div[role="button"] * {
     background: transparent !important;
@@ -1228,8 +1407,8 @@ input,
 textarea,
 .stTextInput input,
 .stTextArea textarea {
-    background: #020617 !important;
-    border: 1px solid #1e293b !important;
+    background: transparent !important;
+    border: none !important;
     color: #e2e8f0 !important;
 }
 
@@ -1247,6 +1426,58 @@ textarea,
 input::placeholder,
 textarea::placeholder {
     color: #94a3b8 !important;
+}
+
+/* ─── Password Field Polish: Hide browser defaults & Style native toggle ─── */
+input::-ms-reveal,
+input::-ms-clear,
+input::-webkit-password-reveal-button {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+
+[data-testid="stTextInput"] > div > div {
+    display: flex !important;
+    align-items: center !important;
+    height: 46px !important;
+    overflow: hidden !important;
+}
+
+[data-testid="stTextInput"] input {
+    flex: 1 !important;
+    height: 100% !important;
+    padding-right: 44px !important;
+}
+
+[data-testid="stTextInput"] button {
+    transition: color 0.2s ease, transform 0.2s ease !important;
+    padding: 0 !important;
+    margin: 0 12px 0 -40px !important; /* Alignment nudge */
+    z-index: 5 !important;
+    color: #64748b !important;
+}
+
+[data-testid="stTextInput"] button:hover {
+    color: #818cf8 !important;
+    transform: scale(1.1);
+}
+
+[data-testid="stTextInput"] button svg {
+    fill: currentColor !important;
+    width: 20px !important;
+    height: 20px !important;
+}
+
+/* Hide redundant help text */
+[data-testid="stTextInput"] .st-ae, 
+[data-testid="stTextInput"] p:has(span:contains("Press Enter")) {
+    display: none !important;
+}
+
+[data-testid="stTextInput"] > div > div:focus-within {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 1px #6366f1, 0 0 12px rgba(99, 102, 241, 0.2) !important;
 }
 
 /* Final clean sidebar uploader and status styling */
@@ -1312,6 +1543,113 @@ textarea::placeholder {
 .stAlert svg {
     color: #34d399 !important;
     fill: #34d399 !important;
+}
+
+/* =============================================================================
+   PREMIUM SEGMENTED NAVIGATION (GLOBAL OVERRIDE & SIDEBAR RESET)
+   ============================================================================= */
+
+/* 1. Kill the radio dots everywhere in the app */
+div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p::before,
+div[role="radiogroup"] label span[data-testid="stWidgetLabel"] div div,
+div[role="radiogroup"] [data-testid="stRadioButton"] div[role="radiogroup"] > label > div:first-child,
+div[role="radiogroup"] div[data-testid="stRadioButton"] label div:first-child {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    opacity: 0 !important;
+}
+
+/* 2. Global Segmented Control Style (for horizontal layouts) */
+div[role="radiogroup"] {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-around !important; /* Spread tabs across the bar */
+    gap: 8px !important;
+    background: rgba(15, 23, 42, 0.5) !important;
+    backdrop-filter: blur(20px) !important;
+    padding: 10px !important;
+    border-radius: 32px !important;
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4) !important;
+    margin-bottom: 40px !important;
+    width: 100% !important; /* Expand to fit screen */
+    max-width: 1400px !important; /* Keep it sane on massive ultrawide monitors */
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+/* 3. Button/Label Styling */
+div[role="radiogroup"] label {
+    padding: 12px 32px !important;
+    border-radius: 24px !important;
+    cursor: pointer !important;
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    border: 1px solid transparent !important;
+    margin: 0 !important;
+    background: transparent !important;
+    color: #e2e8f0 !important;
+    font-weight: 800 !important;
+    font-size: 16px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 12px !important;
+    letter-spacing: 0.04em !important;
+    flex: 1 0 auto !important; /* Don't allow shrinking */
+    white-space: nowrap !important; /* FORCE text to stay on one line */
+    min-width: max-content !important; /* Ensure enough space for the longest label */
+}
+
+/* 4. ACTIVE STATE: The "Eye-Catching" Part */
+div[role="radiogroup"] label[data-checked="true"] {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.4), 0 8px 16px rgba(0, 0, 0, 0.2) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    transform: translateY(-2px) scale(1.02) !important;
+}
+
+/* 5. HOVER EFFECT */
+div[role="radiogroup"] label:hover:not([data-checked="true"]) {
+    background: rgba(255, 255, 255, 0.07) !important;
+    color: #f8fafc !important;
+    transform: translateY(-1px) !important;
+}
+
+/* =============================================================================
+   SIDEBAR RADIO BUTTON RESET (KEEP IT VERTICAL & CLEAN)
+   ============================================================================= */
+section[data-testid="stSidebar"] div[role="radiogroup"] {
+    flex-direction: column !important;
+    gap: 12px !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+}
+
+section[data-testid="stSidebar"] div[role="radiogroup"] label {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    padding: 12px 16px !important;
+    border-radius: 12px !important;
+    width: 100% !important;
+    font-weight: 500 !important;
+    font-size: 14px !important;
+    color: #94a3b8 !important;
+    justify-content: flex-start !important;
+}
+
+section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
+    background: rgba(99, 102, 241, 0.12) !important;
+    border-color: #6366f1 !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15) !important;
+    transform: none !important;
 }
 
 /* Plain inline dataset success text (no card/background container) */
@@ -1554,6 +1892,68 @@ textarea::placeholder {
     color: #e2e8f0;
     font-weight: 500;
 }
+
+/* ─────────────────── KPI Cards & Metrics ─────────────────── */
+.kpi-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 120px;
+    padding: 18px !important;
+    gap: 8px;
+}
+
+.kpi-card__topline {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    width: 100%;
+    gap: 8px;
+}
+
+.kpi-card__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #94a3b8;
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kpi-card__chip {
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap !important;
+}
+
+.kpi-card__value {
+    font-size: 28px;
+    font-weight: 800;
+    color: #ffffff;
+    margin: 4px 0;
+    white-space: nowrap !important;
+}
+
+.kpi-card__meta {
+    font-size: 12px;
+    color: #64748b;
+    white-space: nowrap !important;
+}
+
+.kpi-card__trend {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap !important; /* PREVENT WRAPPING HERE */
+    margin-top: 4px;
+}
+
+.kpi-card__trend.positive { color: #10b981; }
+.kpi-card__trend.negative { color: #ef4444; }
 
 /* Sidebar user card + logout */
 .sidebar-user-card {

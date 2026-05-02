@@ -62,22 +62,24 @@ def render_user_bubble(message: str):
 
 def render_assistant_bubble(message: str):
     clean_msg = clean_text(message)
-    left, right = st.columns([0.06, 0.94])
+    # Using a tight left column for the icon to maximize text space
+    left, right = st.columns([0.05, 0.95])
     with left:
         st.markdown(
             """
             <div style="
-                width:36px;
-                height:36px;
+                width:34px;
+                height:34px;
                 border-radius:50%;
-                background: linear-gradient(135deg,#22C55E,#16A34A);
+                background: linear-gradient(135deg,#10B981,#059669);
                 display:flex;
                 align-items:center;
                 justify-content:center;
                 color:white;
-                font-size:11px;
-                font-weight:700;
-                box-shadow: 0 8px 20px rgba(34,197,94,0.25);
+                font-size:10px;
+                font-weight:800;
+                letter-spacing:0.05em;
+                box-shadow: 0 4px 12px rgba(16,185,129,0.2);
                 margin-top:2px;
             ">AI</div>
             """,
@@ -88,14 +90,18 @@ def render_assistant_bubble(message: str):
         st.markdown(
             f"""
             <div style="
-                background: rgba(15,23,42,0.96);
-                border: 1px solid rgba(148, 163, 184, 0.5);
-                border-radius: 14px;
-                padding: 10px 14px;
-                max-width: 78%;
-                font-size: 14px;
-                line-height: 1.5;
-                box-shadow: 0 14px 32px rgba(15,23,42,0.9);
+                background: rgba(15,23,42,0.6);
+                backdrop-filter: blur(16px);
+                border: 1px solid rgba(148, 163, 184, 0.2);
+                border-radius: 4px 28px 28px 28px;
+                padding: 24px 32px;
+                max-width: 65%;
+                font-size: 15.5px;
+                color: #f8fafc;
+                line-height: 1.6;
+                box-shadow: 0 14px 40px rgba(0,0,0,0.4);
+                margin-bottom: 20px;
+                text-align: left;
             ">
                 {safe_msg}
             </div>
@@ -121,7 +127,7 @@ def render_kpi_cards(kpis):
             trend_label = kpi.get("trend_label", "from prior baseline")
             st.markdown(
                 f"""
-                <div class="kpi-card glass-card">
+                <div class="kpi-card glass-card stagger-{(i % 5) + 1}">
                   <div class="kpi-card__topline">
                     <div class="kpi-card__label">{html.escape(str(metric))}</div>
                     <div class="kpi-card__chip {trend_class}">
@@ -362,17 +368,41 @@ def render_structured_response(data: dict):
         "RECOMMENDATIONS": "Recommendations",
     }
 
-    for section, points in data.items():
-        if not points:
-            continue
+    # Icon column for the structured block
+    left, right = st.columns([0.07, 0.93])
+    with left:
+        st.markdown(
+            """
+            <div style="
+                width:38px;
+                height:38px;
+                border-radius:50%;
+                background: linear-gradient(135deg,#10B981,#059669);
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                color:white;
+                font-size:10px;
+                font-weight:800;
+                letter-spacing:0.05em;
+                box-shadow: 0 8px 20px rgba(16,185,129,0.2);
+                margin-top:4px;
+            ">AI</div>
+            """,
+            unsafe_allow_html=True,
+        )
+    
+    with right:
+        for section, points in data.items():
+            if not points:
+                continue
 
-        label = section_labels.get(section, section.title())
-        st.markdown(f"### {label}")
+            label = section_labels.get(section, section.title())
+            st.markdown(f"#### {label}")
 
-        for point in points:
-            st.write(f"- {clean_text(point)}")
-
-        st.markdown("---")
+            for point in points:
+                st.write(f"- {clean_text(point)}")
+            # Removed the separator line to fix ghost bar issue
 
 
 def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: int | None = None):

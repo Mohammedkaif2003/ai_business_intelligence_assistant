@@ -128,11 +128,16 @@ def render_dataframe_result(dataframe: pd.DataFrame, key_prefix: str, title: str
 
 def render_dict_result(result: dict, key_prefix: str):
     has_displayable = False
-    st.markdown('<div class="glass-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
+    
     for key, value in result.items():
         try:
             if "<Axes:" in str(value) or "<AxesSubplot" in str(value):
                 continue
+            
+            # Start the container ONLY when we find the first displayable item
+            if not has_displayable:
+                st.markdown('<div class="glass-card" style="margin-bottom: 16px; padding: 16px;">', unsafe_allow_html=True)
+            
             df_result = pd.DataFrame(value).reset_index()
             if df_result.shape[1] == 2:
                 df_result.columns = ["Category", "Value"]
@@ -143,7 +148,9 @@ def render_dict_result(result: dict, key_prefix: str):
             has_displayable = True
         except Exception:
             continue
-    st.markdown("</div>", unsafe_allow_html=True)
+            
+    if has_displayable:
+        st.markdown("</div>", unsafe_allow_html=True)
     return has_displayable
 
 
