@@ -116,9 +116,10 @@ def render_login_view(app_title: str, app_icon: str) -> None:
     with st.expander("Demo credentials", expanded=False):
         st.markdown(
             """
-            **Administrator** &nbsp;·&nbsp; `admin` / `admin123`
+            **Administrator** &nbsp;·&nbsp; `admin` / `admin123`<br>
             **Business Analyst** &nbsp;·&nbsp; `analyst` / `analyst123`
-            """
+            """,
+            unsafe_allow_html=True
         )
 
 
