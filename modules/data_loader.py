@@ -32,6 +32,20 @@ def normalize_columns(df):
 
     df.rename(columns=mapping, inplace=True)
 
+    # Prevent duplicate columns after normalization (e.g. Sales and Sales Amount both mapping to Revenue)
+    # If duplicates exist, pandas allows it but it breaks downstream analysis.
+    if df.columns.duplicated().any():
+        new_cols = []
+        counts = {}
+        for col in df.columns:
+            if col in counts:
+                counts[col] += 1
+                new_cols.append(f"{col} {counts[col]}")
+            else:
+                counts[col] = 1
+                new_cols.append(col)
+        df.columns = new_cols
+
     # Convert Date column if present
     if "Date" in df.columns:
         try:

@@ -200,7 +200,7 @@ def _render_try_asking_section(df: pd.DataFrame, schema: dict | None = None):
         for offset, suggestion in enumerate(row_items):
             idx = start + offset
             with chip_cols[offset]:
-                if st.button(suggestion, key=f"try_asking_{idx}", use_container_width=True):
+                if st.button(suggestion, key=f"try_asking_{idx}", width='stretch'):
                     st.session_state.auto_query = suggestion
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -293,7 +293,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
 
     clear_col, _ = st.columns([0.25, 0.75])
     with clear_col:
-        if st.button("🗑️ Clear Chat", key="clear_chat_btn", use_container_width=True):
+        if st.button("🗑️ Clear Chat", key="clear_chat_btn", width='stretch'):
             st.session_state.chat_history = []
             st.session_state.messages = []
             st.session_state.analysis_history = []
@@ -316,9 +316,9 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
     user_input = st.chat_input("Ask anything about your data...", key="analyst_chat_input")
 
     # Prioritize auto-query (from button clicks) over the manual input widget
-    if "auto_query" in st.session_state and st.session_state.auto_query:
+    if st.session_state.get("auto_query"):
         query = st.session_state.auto_query
-        st.session_state.auto_query = None
+        st.session_state.pop("auto_query", None)
     else:
         query = user_input
 
@@ -691,7 +691,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
             if suggested_queries:
                 st.markdown("**Try one of these graph-friendly questions:**")
                 for idx, suggestion in enumerate(suggested_queries):
-                    if st.button(suggestion, key=f"graphable_prompt_{qk}_{idx}", use_container_width=True):
+                    if st.button(suggestion, key=f"graphable_prompt_{qk}_{idx}", width='stretch'):
                         st.session_state.auto_query = suggestion
                         st.rerun() # Instant trigger
 
@@ -730,7 +730,7 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
             if is_error_like_text(result) or is_error_like_text(ai_response):
                 st.markdown("**Suggested Rephrases**")
                 for idx, suggestion in enumerate(rephrase_suggestions):
-                    if st.button(suggestion, key=f"rephrase_prompt_{qk}_{idx}", use_container_width=True):
+                    if st.button(suggestion, key=f"rephrase_prompt_{qk}_{idx}", width='stretch'):
                         st.session_state.auto_query = suggestion
                         st.rerun() # Instant trigger
 
@@ -920,7 +920,7 @@ def render_reports_tab():
                 unsafe_allow_html=True,
             )
 
-            if st.button("Generate Professional PDF", type="primary", use_container_width=True):
+            if st.button("Generate Professional PDF", type="primary", width='stretch'):
                 with st.spinner("Compiling and formatting your professional report..."):
                     file_path = generate_pdf(query=None, summary_text=None, dataframe=None, charts=None, analysis_history=history)
                 add_recent_activity("report", "PDF report created")
@@ -930,7 +930,7 @@ def render_reports_tab():
                         data=file,
                         file_name="AI_Executive_Report.pdf",
                         mime="application/pdf",
-                        use_container_width=True,
+                        width='stretch',
                     )
                 st.success("Report generated successfully!")
             st.markdown("</div></div>", unsafe_allow_html=True)

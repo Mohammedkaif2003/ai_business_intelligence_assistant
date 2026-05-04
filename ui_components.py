@@ -37,48 +37,31 @@ def clean_text(text: str) -> str:
 
 
 def render_user_bubble(message: str):
-    clean_msg = html.escape(clean_text(message)).replace("\n", "<br>")
-
+    """Render a user chat bubble with Markdown support."""
     st.markdown(
         f"""
-    <div style="display:flex; justify-content:flex-end; margin-bottom:16px;">
-        <div style="
-            background: linear-gradient(135deg,#4F46E5,#7C3AED);
-            color:#FFFFFF;
-            padding:10px 14px;
-            border-radius:18px 18px 4px 18px;
-            max-width:70%;
-            font-size:14px;
-            line-height:1.45;
-            box-shadow: 0 10px 24px rgba(79,70,229,0.28);
-        ">
-            {clean_msg}
+        <div class="user-bubble-container">
+            <div class="user-bubble">
+                {message}
+            </div>
         </div>
-    </div>
-    """,
+        """,
         unsafe_allow_html=True,
     )
 
 
 def render_assistant_bubble(message: str):
-    clean_msg = clean_text(message)
+    """Render an AI assistant chat bubble with Markdown support."""
     # Using a tight left column for the icon to maximize text space
     left, right = st.columns([0.05, 0.95])
     with left:
         st.markdown(
             """
             <div style="
-                width:34px;
-                height:34px;
-                border-radius:50%;
+                width:34px; height:34px; border-radius:50%;
                 background: linear-gradient(135deg,#10B981,#059669);
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                color:white;
-                font-size:10px;
-                font-weight:800;
-                letter-spacing:0.05em;
+                display:flex; align-items:center; justify-content:center;
+                color:white; font-size:10px; font-weight:800;
                 box-shadow: 0 4px 12px rgba(16,185,129,0.2);
                 margin-top:2px;
             ">AI</div>
@@ -86,24 +69,13 @@ def render_assistant_bubble(message: str):
             unsafe_allow_html=True,
         )
     with right:
-        safe_msg = html.escape(clean_msg).replace("\n", "<br>")
+        # We use a container to wrap the markdown in our styled bubble
         st.markdown(
             f"""
-            <div style="
-                background: rgba(15,23,42,0.6);
-                backdrop-filter: blur(16px);
-                border: 1px solid rgba(148, 163, 184, 0.2);
-                border-radius: 4px 28px 28px 28px;
-                padding: 24px 32px;
-                max-width: 65%;
-                font-size: 15.5px;
-                color: #f8fafc;
-                line-height: 1.6;
-                box-shadow: 0 14px 40px rgba(0,0,0,0.4);
-                margin-bottom: 20px;
-                text-align: left;
-            ">
-                {safe_msg}
+            <div class="ai-bubble-container">
+                <div class="ai-bubble">
+                    {message}
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -248,7 +220,7 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
                 file_name=f"{download_key}_plot_data.csv",
                 mime="text/csv",
                 key=f"{download_key}_csv",
-                use_container_width=True,
+                width='stretch',
             )
         with right:
             try:
@@ -259,7 +231,7 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
                     file_name=f"{download_key}.png",
                     mime="image/png",
                     key=f"{download_key}_png",
-                    use_container_width=True,
+                    width='stretch',
                 )
             except Exception:
                 st.caption("PNG export is unavailable in this environment.")
@@ -269,7 +241,7 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
         with st_instance.expander("Suggested follow-up charts", expanded=False):
             for idx, item in enumerate(suggestion_items):
                 clean_q = clean_text(item["question"])
-                if st_instance.button(clean_q, key=f"{download_key}_graph_followup_chart_{idx}", use_container_width=True):
+                if st_instance.button(clean_q, key=f"{download_key}_graph_followup_chart_{idx}", width='stretch'):
                     st.session_state.auto_query = clean_q
                     st.rerun()
 
@@ -337,7 +309,7 @@ def render_sidebar_question_inspiration(questions):
 
         for idx, question in enumerate(questions):
             label = clean_text(question)
-            if st.button(label, key=f"sidebar_question_{idx}", use_container_width=True):
+            if st.button(label, key=f"sidebar_question_{idx}", width='stretch'):
                 clicked_question = label
 
         st.markdown("</div>", unsafe_allow_html=True)
@@ -465,17 +437,14 @@ def render_table_panel(title: str, dataframe: pd.DataFrame, key: str, max_rows: 
         st.caption(f"{len(working_df):,} rows shown")
 
     display_df = working_df.fillna("—").copy()
-    display_df.columns = [html.escape(str(col)) for col in display_df.columns]
-
+    display_df.columns = [html.escape(str(col)) for col in display_df.columns]    # Optimize HTML generation for large tables
     rows_html = []
     for row_index, (_, row) in enumerate(display_df.iterrows()):
-        cells = []
-        for value in row.tolist():
-            cell_value = html.escape(str(value))
-            cells.append(f"<td>{cell_value}</td>")
+        cells = [f"<td>{html.escape(str(val))}</td>" for val in row]
         row_class = "even" if row_index % 2 else "odd"
         rows_html.append(f"<tr class='{row_class}'>{''.join(cells)}</tr>")
-
+    
+    table_body = "".join(rows_html)
     header_html = "".join(f"<th>{col}</th>" for col in display_df.columns)
     table_html = f"""
     <div class="dark-table-wrap">

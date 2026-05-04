@@ -11,23 +11,11 @@ MAX_AST_NODES = 900
 MAX_INPUT_ROWS = 20000
 MAX_RESULT_ROWS = 5000
 
-FORBIDDEN_PATTERNS = [
-    "import ",
-    "os.",
-    "sys.",
-    "subprocess",
-    "open(",
-    "__",
-    "eval(",
-    "exec(",
-    "write(",
-    "read(",
-    "shutil",
-    "pathlib",
-    "socket",
-    "requests",
-    "http",
-]
+# Rely primarily on AST validation (SafeCodeValidator) rather than brittle 
+# substring checks which trigger false positives on valid column/variable names.
+FORBIDDEN_KEYWORDS = {
+    "os", "sys", "subprocess", "socket", "requests", "http", "shutil", "pathlib"
+}
 
 
 class SafeCodeValidator(ast.NodeVisitor):
@@ -80,15 +68,7 @@ def execute_code(code, df):
         return validation_result
 
     # Provide pandas, numpy, and plotting libs in the execution scope
-    # so AI-generated code like df.groupby().agg() works correctly
-    import plotly.graph_objects as _go
-    global_vars = {
-        "pd": pd,
-        "np": np,
-        "px": px,
-        "go": _go,
-    }
-
+    global_vars = _get_execution_globals()
     safe_df = df.head(MAX_INPUT_ROWS).copy() if isinstance(df, pd.DataFrame) else df
     local_vars = {"df": safe_df}
 
@@ -132,8 +112,9 @@ def validate_generated_code(code):
     if len(code) > MAX_CODE_LENGTH:
         return "Unsafe code detected: code too long"
 
-    for word in FORBIDDEN_PATTERNS:
-        if word in code:
+    # We only block high-risk keywords that shouldn't appear in ANY valid BI code.
+    for word in FORBIDDEN_KEYWORDS:
+        if f"{word}." in code or f"{word}(" in code:
             return f"Unsafe code detected: {word}"
 
     try:
@@ -145,3 +126,20 @@ def validate_generated_code(code):
         return tree
     except Exception as e:
         return f"Unsafe code detected: {str(e)}"
+
+
+# ── Internal Helpers ────────────────────────────────────────────────────────
+
+_EXECUTION_GLOBALS = None
+
+def _get_execution_globals():
+    global _EXECUTION_GLOBALS
+    if _EXECUTION_GLOBALS is None:
+        import plotly.graph_objects as _go
+        _EXECUTION_GLOBALS = {
+            "pd": pd,
+            "np": np,
+            "px": px,
+            "go": _go,
+        }
+    return _EXECUTION_GLOBALS

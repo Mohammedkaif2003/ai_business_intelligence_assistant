@@ -98,7 +98,7 @@ def render_login_view(app_title: str, app_icon: str) -> None:
     with st.form("login_form", clear_on_submit=False):
         username = st.text_input("Username", placeholder="e.g. admin", key="login_username")
         password = st.text_input("Password", type="password", placeholder="Your password", key="login_password")
-        submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Sign In", type="primary", width='stretch')
 
     if submitted:
         if not username or not password:
@@ -149,6 +149,6 @@ def render_sidebar_user_badge() -> None:
         """,
         unsafe_allow_html=True,
     )
-    if st.sidebar.button("Sign out", key="sidebar_logout_btn", use_container_width=True):
+    if st.sidebar.button("Sign out", key="sidebar_logout_btn", width='stretch'):
         logout()
         st.rerun()

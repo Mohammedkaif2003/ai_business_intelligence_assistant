@@ -113,10 +113,32 @@ def persist_analysis_cycle(
     st.session_state["last_result"] = result
     st.session_state["last_query"] = query
 
+    # ── Chat & Analysis History (Capped to prevent memory leaks) ──
+    MAX_HISTORY = 20
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    if len(st.session_state.messages) > MAX_HISTORY * 2: # User + AI pairs
+        st.session_state.messages = st.session_state.messages[-(MAX_HISTORY * 2):]
+
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+    if len(st.session_state.chat_history) > MAX_HISTORY:
+        st.session_state.chat_history = st.session_state.chat_history[-MAX_HISTORY:]
+
+    if "analysis_history" not in st.session_state:
+        st.session_state.analysis_history = []
+    if len(st.session_state.analysis_history) > MAX_HISTORY:
+        st.session_state.analysis_history = st.session_state.analysis_history[-MAX_HISTORY:]
+
     if "result_history" not in st.session_state:
-        st.session_state["result_history"] = []
+        st.session_state.result_history = []
+    if len(st.session_state.result_history) > MAX_HISTORY:
+        st.session_state.result_history = st.session_state.result_history[-MAX_HISTORY:]
+
     if "result_history_details" not in st.session_state:
-        st.session_state["result_history_details"] = []
+        st.session_state.result_history_details = []
+    if len(st.session_state.result_history_details) > MAX_HISTORY:
+        st.session_state.result_history_details = st.session_state.result_history_details[-MAX_HISTORY:]
 
     st.session_state["result_history"].append(result)
     st.session_state["result_history_details"].append(result_history_entry)

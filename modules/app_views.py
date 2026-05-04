@@ -90,7 +90,7 @@ def render_quick_prompt_buttons(df: pd.DataFrame, schema: dict | None = None, da
     quick_prompts = _generate_quick_prompts(df, schema, dataset_name)
     for idx, prompt in enumerate(quick_prompts):
         with prompt_cols[idx]:
-            if st.button(prompt, key=f"starter_prompt_{idx}", use_container_width=True):
+            if st.button(prompt, key=f"starter_prompt_{idx}", width='stretch'):
                 st.session_state.auto_query = prompt
                 st.rerun()
 
@@ -158,7 +158,7 @@ def render_follow_up_buttons(raw_suggestions: str, key_prefix: str):
     parsed_questions = extract_follow_up_questions(raw_suggestions)
     for idx, q in enumerate(parsed_questions):
         clean_q = clean_text(q).replace("`", "")
-        if st.button(clean_q, key=f"{key_prefix}_fq_{idx}", use_container_width=True):
+        if st.button(clean_q, key=f"{key_prefix}_fq_{idx}", width='stretch'):
             st.session_state.auto_query = clean_q
             st.rerun()
     if not parsed_questions:
@@ -232,6 +232,6 @@ def render_chat_history_entry(entry: dict, entry_index: int = 0):
     if entry.get("rephrases"):
         st.markdown("**Suggested Rephrases**")
         for idx, suggestion in enumerate(entry["rephrases"]):
-            if st.button(suggestion, key=f"history_rephrase_{stable_key}_{idx}", use_container_width=True):
+            if st.button(suggestion, key=f"history_rephrase_{stable_key}_{idx}", width='stretch'):
                 st.session_state.auto_query = suggestion
                 st.rerun()

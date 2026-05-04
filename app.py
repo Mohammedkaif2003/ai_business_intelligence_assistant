@@ -260,7 +260,7 @@ if "active_tab" not in st.session_state:
 
 # If an auto_query was queued from another tab (e.g. "try asking"), snap to
 # the AI Analyst so the question is visibly processed.
-if "auto_query" in st.session_state:
+if st.session_state.get("auto_query"):
     st.session_state["active_tab"] = tab_labels[1]
 
 # Styled tab bar: buttons-in-columns gives full visual control over the
@@ -275,7 +275,7 @@ for _idx, _label in enumerate(tab_labels):
         if st.button(
             _label,
             key=f"apex_tab_{_idx}",
-            use_container_width=True,
+            width='stretch',
             type="primary" if _is_active else "secondary",
         ):
             if not _is_active:

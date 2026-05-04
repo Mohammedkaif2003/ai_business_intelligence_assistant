@@ -20,40 +20,22 @@ _KNOWN_SCAFFOLD = re.compile(
 
 
 def sanitize_ai_output(text: str) -> str:
-    """Force the model's reply into flowing prose: strip HTML, code fences,
-    markdown headers/bold, bullet glyphs, and well-known section labels.
-    Even when the system prompt is followed loosely, the user-facing
-    bubble should still look like a paragraph from a senior analyst."""
+    """Loosen sanitization to preserve helpful Markdown like bolding and lists, 
+    while still cleaning up redundant labels and code fences."""
     if not text:
         return ""
 
-    # Convert HTML entities and strip tags / fences.
+    # Convert HTML entities and strip tags.
     text = unescape(str(text))
     text = re.sub(r"</?[^>]+>", "", text)
     text = text.replace("```", "")
 
-    # Drop markdown headings and known scaffolding labels entirely.
-    text = _HEADING_LINE.sub("", text)
+    # Drop redundant section labels but keep the content.
     text = _KNOWN_SCAFFOLD.sub("", text)
 
-    # Unwrap **bold** to plain text (no visual emphasis in chat bubble).
-    text = _BOLD_HEADER.sub(r"\1", text)
-
-    # Strip leading bullet glyphs / numbered-list markers from each line and
-    # collapse the result into a flowing paragraph.
-    cleaned_lines: list[str] = []
-    for raw_line in text.splitlines():
-        line = _BULLET_PREFIX.sub("", raw_line).strip()
-        if not line:
-            continue
-        cleaned_lines.append(line)
-
-    # Join sentence-fragment lines into prose. Preserve paragraph breaks
-    # only where the model emitted truly blank lines (already filtered),
-    # so the result reads as one or two natural paragraphs.
-    joined = " ".join(cleaned_lines)
-    joined = re.sub(r"\s{2,}", " ", joined).strip()
-    return joined
+    # We NO LONGER collapse everything into a single paragraph. 
+    # We preserve lines to allow lists and paragraph breaks to work with st.markdown.
+    return text.strip()
 GROQ_API_KEY = get_secret("GROQ_API_KEY")
 GOOGLE_API_KEY = get_secret("GOOGLE_API_KEY")
 
@@ -61,26 +43,21 @@ GOOGLE_API_KEY = get_secret("GOOGLE_API_KEY")
 #  SENIOR DATA ANALYST SYSTEM PROMPT
 # ═══════════════════════════════════════════════════
 
-ANALYST_SYSTEM_PROMPT = """You are a Senior Business Intelligence Analyst
-talking to a colleague. Answer in natural, flowing prose — exactly the way
-you would explain the result out loud. Your reply must read like one or two
-short conversational paragraphs.
+ANALYST_SYSTEM_PROMPT = """You are a Senior Business Intelligence Analyst 
+talking to a colleague. Answer in a professional, structured, and insightful manner.
 
-ABSOLUTE FORMAT RULES (these override any habit you have):
-- Never use bullet points, dashes, asterisks, or numbered lists. Not even one.
-- Never use markdown headings (# / ## / ###) or bold (**word**).
-- Never use section labels like "Executive Insight:", "Key Findings:",
-  "Business Impact:", "Summary:", "Takeaways:", "Recommendations:".
-- Never start with phrases like "Here is the analysis", "Based on the data",
-  "To analyze ...", "Let me break this down". Just start with the answer.
-- No HTML tags, no code fences, no tables.
+FORMAT RULES:
+- Use bullet points for lists and key findings to improve readability.
+- Use **bold** to emphasize important metrics, trends, or insights.
+- Use paragraph breaks to separate different ideas.
+- Avoid large markdown headings (# / ##).
+- Never use section labels like "Executive Insight:", "Summary:", etc. Just start with the answer.
+- No HTML tags, no code fences, no tables (unless specifically requested).
 
 CONTENT RULES:
-- Write in complete sentences. Connect ideas with words, not punctuation.
-- Reference the specific numbers, columns, and categories from the data
-  provided — never give generic textbook commentary.
-- If something is genuinely uncertain, say so in one clause, not a section.
-- Keep the whole answer under ~120 words unless the question clearly demands more.
+- Reference specific numbers, columns, and categories from the data provided.
+- Identify the "Why" behind the numbers (e.g., why a certain category is leading).
+- Keep the response concise but comprehensive (~150 words max).
 """
 
 def _build_data_context(result, insight=""):

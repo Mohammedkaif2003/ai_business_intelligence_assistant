@@ -304,6 +304,15 @@ button, .stButton > button, .stDownloadButton > button {
     border: 1px solid rgba(148, 163, 184, 0.22) !important;
     box-shadow: 0 10px 24px rgba(2, 6, 23, 0.26) !important;
     transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    width: 100% !important;
+}
+
+[data-testid="stTextInput"] > div {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    min-height: unset !important;
 }
 
 /* Ensure all interactive children within these containers are transparent */
@@ -1462,9 +1471,12 @@ input::-webkit-password-reveal-button {
 [data-testid="stTextInput"] button {
     transition: color 0.2s ease, transform 0.2s ease !important;
     padding: 0 !important;
-    margin: 0 12px 0 -40px !important; /* Alignment nudge */
+    margin: 0 12px 0 -42px !important; /* Alignment nudge */
     z-index: 5 !important;
     color: #64748b !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
 }
 
 [data-testid="stTextInput"] button:hover {
@@ -1478,15 +1490,65 @@ input::-webkit-password-reveal-button {
     height: 20px !important;
 }
 
-/* Hide redundant help text */
-[data-testid="stTextInput"] .st-ae, 
-[data-testid="stTextInput"] p:has(span:contains("Press Enter")) {
+/* Hide redundant help text and force first child to fill width */
+[data-testid="stTextInput"] > div > div:nth-child(n+2) {
     display: none !important;
+}
+
+[data-testid="stTextInput"] > div > div:first-child {
+    width: 100% !important;
 }
 
 [data-testid="stTextInput"] > div > div:focus-within {
     border-color: #6366f1 !important;
     box-shadow: 0 0 0 1px #6366f1, 0 0 12px rgba(99, 102, 241, 0.2) !important;
+}
+
+/* Chat Bubble System */
+.stMarkdown div[data-testid="stMarkdownContainer"] .ai-bubble-container,
+.stMarkdown div[data-testid="stMarkdownContainer"] .user-bubble-container {
+    width: 100%;
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.ai-bubble {
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 4px 28px 28px 28px;
+    padding: 24px 32px;
+    max-width: 85%;
+    font-size: 15.5px;
+    color: #f8fafc;
+    line-height: 1.6;
+    box-shadow: 0 14px 40px rgba(0,0,0,0.4);
+    align-self: flex-start;
+}
+
+.user-bubble {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    border-radius: 28px 28px 4px 28px;
+    padding: 18px 26px;
+    max-width: 75%;
+    font-size: 15.5px;
+    color: #f1f5f9;
+    line-height: 1.5;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    align-self: flex-end;
+    margin-left: auto;
+}
+
+/* Prevent browser autofill from overriding our dark theme */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #020617 inset !important;
+    -webkit-text-fill-color: #e2e8f0 !important;
+    transition: background-color 5000s ease-in-out 0s;
 }
 
 /* Final clean sidebar uploader and status styling */

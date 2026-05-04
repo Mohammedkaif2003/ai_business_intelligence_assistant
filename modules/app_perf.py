@@ -33,6 +33,8 @@ def record_timing(metric_name: str, elapsed_ms: float):
             "value_ms": elapsed_value,
         }
     )
+    if len(st.session_state["perf_timing_events"]) > MAX_TIMING_HISTORY * 2:
+        del st.session_state["perf_timing_events"][:-MAX_TIMING_HISTORY * 2]
 
 
 def clear_timings():
