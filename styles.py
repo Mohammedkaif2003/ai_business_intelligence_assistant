@@ -26,6 +26,14 @@ html, body, .stApp {
     font-family: 'Manrope', 'Segoe UI', sans-serif !important;
 }
 
+/* Fix invisible text in Markdown code blocks (like the demo credentials) */
+code {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #f8fbff !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+}
+
 /* ─── Eliminate ALL white/light background bleed from Streamlit wrappers ─── */
 .stApp > header,
 .stApp > footer,
