@@ -719,8 +719,9 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
 
         if not query_rejected:
             try:
-                with st.spinner("Generating follow-up questions..."):
+                with st.status("🤔 Analyzing context for follow-ups...", expanded=False) as status:
                     suggestions = build_follow_up_suggestions(query, df, schema, st.session_state.get("dataset_name"))
+                    status.update(label="Follow-ups generated!", state="complete", expanded=False)
             except Exception:
                 suggestions = ""
             
@@ -751,6 +752,10 @@ def render_ai_analyst_tab(df: pd.DataFrame, schema: dict, api_key: str, logger):
         result_history_entry=build_result_history_entry(query, result, chart_data, intent_info, query_rejected),
         inline_charts=inline_chart_figs,
     )
+    
+    # Rerun immediately to lock the live elements into the persistent chat history.
+    # This prevents the "lost click" bug where live follow-up buttons wouldn't register on the first click.
+    st.rerun()
 
 
 def render_forecasting_tab(df: pd.DataFrame):
@@ -770,12 +775,14 @@ def render_forecasting_tab(df: pd.DataFrame):
     forecast_periods = st.slider("Forecast periods (months):", min_value=1, max_value=12, value=3)
 
     if st.button("Generate Forecast", key="forecast_btn"):
-        with st.spinner("Running forecast analysis..."):
+        with st.status("🔮 Generating forecast model...", expanded=True) as status:
+            st.write("Analyzing historical trends...")
             forecast_result = forecast_revenue(df, periods=forecast_periods)
+            status.update(label="Forecast complete!", state="complete", expanded=False)
 
         if forecast_result["available"]:
             add_recent_activity("forecast", f"Forecast generated for {forecast_result['metric']}")
-            st.success(forecast_result["message"])
+            st.toast(forecast_result["message"], icon="🔮")
 
             trend = forecast_result["trend"]
             metric = forecast_result["metric"]
@@ -932,7 +939,7 @@ def render_reports_tab():
                         mime="application/pdf",
                         width='stretch',
                     )
-                st.success("Report generated successfully!")
+                st.toast("Report generated successfully!", icon="📑")
             st.markdown("</div></div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)

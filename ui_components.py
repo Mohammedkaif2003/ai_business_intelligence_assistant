@@ -153,6 +153,7 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
     display_fig = copy.deepcopy(source_fig)
     display_fig.update_layout(
         template="plotly_dark",
+        hovermode="x unified",
         paper_bgcolor="rgba(15, 23, 42, 0)",
         plot_bgcolor="rgba(15, 23, 42, 0)",
         font=dict(color="#e6eefc", family="Manrope, Segoe UI, sans-serif", size=12),

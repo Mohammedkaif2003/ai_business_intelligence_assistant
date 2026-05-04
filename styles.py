@@ -79,7 +79,16 @@ section.main > div.block-container,
 /* Ensure bottom chat-input area also gets the dark bg */
 [data-testid="stBottom"],
 [data-testid="stBottomBlockContainer"] {
-    background: linear-gradient(180deg, transparent 0%, #03111d 12%) !important;
+    background: linear-gradient(180deg, rgba(3, 17, 29, 0) 0%, rgba(3, 17, 29, 1) 15%) !important;
+}
+
+/* Override Streamlit's native white gradient mask pseudo-elements */
+[data-testid="stBottom"]::before,
+[data-testid="stBottomBlockContainer"]::before,
+[data-testid="stBottom"]::after,
+[data-testid="stBottomBlockContainer"]::after {
+    background: linear-gradient(0deg, #03111d 0%, rgba(3, 17, 29, 0) 100%) !important;
+    pointer-events: none;
 }
 
 [data-testid="stSidebar"],
@@ -111,9 +120,7 @@ section[data-testid="stSidebar"],
 }
 
 [data-testid="stSidebar"] [data-testid="stFileUploader"],
-[data-testid="stSidebar"] [data-baseweb="select"],
 [data-testid="stSidebar"] [data-baseweb="select"] > div,
-[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"],
 [data-testid="stSidebar"] .stTextInput > div > div > input,
 [data-testid="stSidebar"] .stNumberInput input {
     background: linear-gradient(180deg, #0f172a 0%, #020617 100%) !important;
@@ -293,8 +300,6 @@ button, .stButton > button, .stDownloadButton > button {
 
 /* Unified Input Container Styling (Username, Password, Select, Number, etc.) */
 [data-baseweb="select"] > div,
-[data-baseweb="select"] [role="combobox"],
-.stSelectbox div[data-baseweb="select"],
 .stTextInput > div > div,
 .stNumberInput > div > div,
 .stTextArea > div > div {
@@ -305,6 +310,17 @@ button, .stButton > button, .stDownloadButton > button {
     box-shadow: 0 10px 24px rgba(2, 6, 23, 0.26) !important;
     transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
     width: 100% !important;
+}
+
+[data-baseweb="select"] [role="combobox"] {
+    background: transparent !important;
+}
+
+/* Make selectbox feel like a pure dropdown, not a text input */
+[data-baseweb="select"] input {
+    caret-color: transparent !important;
+    cursor: pointer !important;
+    pointer-events: none !important;
 }
 
 [data-testid="stTextInput"] > div {
@@ -1231,9 +1247,7 @@ div[aria-selected="true"][role="option"] > div {
 }
 
 /* ---------------- Final Streamlit Dark Override ---------------- */
-[data-baseweb="select"],
-[data-baseweb="select"] > div,
-[data-baseweb="select"] [role="combobox"] {
+[data-baseweb="select"] > div {
     background: #020617 !important;
     border: 1px solid #1e293b !important;
     color: #e2e8f0 !important;

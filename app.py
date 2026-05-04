@@ -135,10 +135,41 @@ def render_onboarding_hint():
 def render_empty_state_hero():
     st.markdown(
         """
-        <div class="empty-state-hero">
-            <div class="empty-state-hero__title">📊 Analyze your data instantly</div>
-            <div class="empty-state-hero__subtitle">Upload a CSV or select a dataset to start exploring insights.</div>
-            <div class="empty-state-hero__support">Supports CSV files (e.g. sales, finance, analytics)</div>
+        <div class="empty-state-hero" style="text-align: center; padding: 40px 20px;">
+            <div style="display: flex; justify-content: center; margin-bottom: 24px;">
+                <svg width="180" height="140" viewBox="0 0 240 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="20" y="80" width="36" height="80" rx="6" fill="url(#paint0_linear)" fill-opacity="0.8"/>
+                    <rect x="76" y="50" width="36" height="110" rx="6" fill="url(#paint1_linear)" fill-opacity="0.9"/>
+                    <rect x="132" y="20" width="36" height="140" rx="6" fill="url(#paint2_linear)"/>
+                    <rect x="188" y="90" width="36" height="70" rx="6" fill="url(#paint3_linear)" fill-opacity="0.7"/>
+                    <path d="M38 70 L94 40 L150 10 L206 80" stroke="#818CF8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="38" cy="70" r="6" fill="#0F172A" stroke="#818CF8" stroke-width="3"/>
+                    <circle cx="94" cy="40" r="6" fill="#0F172A" stroke="#818CF8" stroke-width="3"/>
+                    <circle cx="150" cy="10" r="6" fill="#0F172A" stroke="#818CF8" stroke-width="3"/>
+                    <circle cx="206" cy="80" r="6" fill="#0F172A" stroke="#818CF8" stroke-width="3"/>
+                    <defs>
+                        <linearGradient id="paint0_linear" x1="38" y1="80" x2="38" y2="160" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#4F46E5"/>
+                            <stop offset="1" stop-color="#312E81" stop-opacity="0"/>
+                        </linearGradient>
+                        <linearGradient id="paint1_linear" x1="94" y1="50" x2="94" y2="160" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#4F46E5"/>
+                            <stop offset="1" stop-color="#312E81" stop-opacity="0"/>
+                        </linearGradient>
+                        <linearGradient id="paint2_linear" x1="150" y1="20" x2="150" y2="160" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#6366F1"/>
+                            <stop offset="1" stop-color="#3730A3" stop-opacity="0"/>
+                        </linearGradient>
+                        <linearGradient id="paint3_linear" x1="206" y1="90" x2="206" y2="160" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#4F46E5"/>
+                            <stop offset="1" stop-color="#312E81" stop-opacity="0"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+            </div>
+            <div class="empty-state-hero__title" style="font-size: 26px; font-weight: 800; color: #f8fbff; margin-bottom: 12px;">Analyze your data instantly</div>
+            <div class="empty-state-hero__subtitle" style="font-size: 15px; color: #cbd5e1; margin-bottom: 16px;">Upload a CSV or select a dataset to start exploring insights.</div>
+            <div class="empty-state-hero__support" style="font-size: 13px; color: #64748b; font-weight: 500;">Supports CSV files (e.g. sales, finance, analytics)</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -227,10 +258,7 @@ if selected_key and df_to_load is not None:
         },
     )
     if was_activated:
-        st.sidebar.markdown(
-            f"<div class='sidebar-success-inline'>✅ {selected_key} loaded successfully</div>",
-            unsafe_allow_html=True,
-        )
+        st.toast(f"{selected_key} loaded successfully!", icon="✅")
 
 if "df" not in st.session_state or st.session_state["df"] is None:
     render_empty_state_hero()
