@@ -191,7 +191,9 @@ def render_chart_card(chart, st_instance, key_prefix: str | None = None):
             except Exception:
                 pass
     fig = display_fig
-    chart_key = key_prefix or re.sub(r"[^a-zA-Z0-9_]+", "_", payload.get("title", "chart"))
+    raw_title = payload.get("title")
+    title_str = str(raw_title) if raw_title else "chart"
+    chart_key = key_prefix or re.sub(r"[^a-zA-Z0-9_]+", "_", title_str)
     st_instance.plotly_chart(fig, use_container_width=True, key=f"{chart_key}_plot")
 
     rationale = clean_text(payload.get("rationale", ""))
